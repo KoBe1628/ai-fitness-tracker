@@ -13,16 +13,17 @@ import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
 
 // --- SOUND SETUP ---
-// Fixed URL (removed markdown artifacts)
 const popSound = new Audio(
-  "https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3"
+  "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
 );
+// const popSound = new Audio('/pop.mp3'); // Uncomment for local file
 
 function App() {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
+  // --- APP STATE ---
+  const [appState, setAppState] = useState("intro"); // 'intro' | 'active'
+  const [showInstructions, setShowInstructions] = useState(false);
 
-  // State
+  // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
   const [history, setHistory] = useState([]);
   const [best, setBest] = useState(0);
@@ -32,17 +33,18 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
-  // Level Logic
-  const level = Math.floor(xp / 100) + 1;
-  const progressToNextLevel = xp % 100;
-
   // Refs
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const detectorRef = useRef(null);
   const countRef = useRef(0);
   const curlStateRef = useRef("rest");
-  const startedRef = useRef(false);
   const exerciseRef = useRef("left_curl");
   const hasBrokenRecord = useRef(false);
+
+  // Computed Level
+  const level = Math.floor(xp / 100) + 1;
+  const progressToNextLevel = xp % 100;
 
   const EXERCISES = {
     left_curl: {
@@ -71,19 +73,31 @@ function App() {
     },
   };
 
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    init();
+  // --- FULLSCREEN HELPER ---
+  const toggleFullScreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (err) {
+      console.log("Error enabling full-screen:", err);
+    }
+  };
 
-    return () => {
+  // --- INIT AI ONLY WHEN ACTIVE ---
+  useEffect(() => {
+    if (appState === "active") {
+      init();
+    } else {
+      // Cleanup when going back to intro
       if (videoRef.current && videoRef.current.srcObject) {
         const tracks = videoRef.current.srcObject.getTracks();
         tracks.forEach((track) => track.stop());
       }
-    };
-  }, []);
+    }
+  }, [appState]);
 
+  // Update exercise & Load saved data
   useEffect(() => {
     exerciseRef.current = exercise;
     setCount(0);
@@ -94,11 +108,9 @@ function App() {
 
     const savedBest = localStorage.getItem(`best_${exercise}`) || 0;
     setBest(parseInt(savedBest));
-
     const savedHistory =
       JSON.parse(localStorage.getItem(`history_${exercise}`)) || [];
     setHistory(savedHistory);
-
     const savedXp = localStorage.getItem("total_xp") || 0;
     setXp(parseInt(savedXp));
   }, [exercise]);
@@ -108,8 +120,6 @@ function App() {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.2;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
       window.speechSynthesis.speak(utterance);
     }
   }
@@ -178,8 +188,7 @@ function App() {
 
     if (poses.length > 0) {
       const pose = poses[0];
-      const currentExercise = exerciseRef.current;
-      const config = EXERCISES[currentExercise];
+      const config = EXERCISES[exerciseRef.current];
       const [p1Name, p2Name, p3Name] = config.joints;
       const p1 = pose.keypoints.find((k) => k.name === p1Name);
       const p2 = pose.keypoints.find((k) => k.name === p2Name);
@@ -314,47 +323,127 @@ function App() {
 
   const chartData = history.length > 0 ? history : [{ reps: 0, time: "Start" }];
 
-  return (
-    <div className="bg-gray-900 min-h-screen text-white p-4 lg:p-8">
-      {/* 1. Header & XP (Full Width) */}
-      <div className="max-w-7xl mx-auto mb-6">
-        <div className="flex flex-col md:flex-row justify-between items-center mb-4">
-          <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-500">
-            AI Trainer
+  // --- RENDER LOGIC ---
+
+  if (appState === "intro") {
+    return (
+      <div className="bg-gray-900 h-screen w-full text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Background decoration */}
+        <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
+          <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
+          <div className="absolute top-20 right-20 w-72 h-72 bg-teal-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
+          <div className="absolute -bottom-8 left-1/2 w-72 h-72 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+        </div>
+
+        <div className="z-10 text-center max-w-2xl">
+          <div className="mb-8 inline-block p-4 rounded-full bg-gray-800/50 backdrop-blur border border-gray-700">
+            <span className="text-2xl">🤖</span>
+          </div>
+          <h1 className="text-6xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-600">
+            AI Fitness Trainer
           </h1>
-          <div className="flex items-center gap-4 mt-4 md:mt-0">
-            <div className="text-right">
-              <p className="text-xs text-gray-400 uppercase">Best</p>
-              <p className="text-2xl font-bold text-yellow-400">{best}</p>
-            </div>
-            <select
-              value={exercise}
-              onChange={(e) => setExercise(e.target.value)}
-              className="bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          <p className="text-gray-300 text-xl mb-12 leading-relaxed">
+            Transform your webcam into a personal gym tracker.
+            <br />
+            Count reps, track sets, and level up with computer vision.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button
+              onClick={() => {
+                toggleFullScreen();
+                setAppState("active");
+              }}
+              className="px-8 py-4 bg-gradient-to-r from-teal-500 to-blue-600 rounded-xl font-bold text-lg shadow-lg hover:shadow-teal-500/50 transition-all transform hover:scale-105"
             >
-              <option value="left_curl">Left Curl</option>
-              <option value="right_curl">Right Curl</option>
-              <option value="squat">Squats</option>
-              <option value="jumping_jack">Jumping Jacks</option>
-            </select>
+              Start Workout
+            </button>
+            <button
+              onClick={() => setShowInstructions(true)}
+              className="px-8 py-4 bg-gray-800 rounded-xl font-bold text-lg border border-gray-700 hover:bg-gray-700 transition-all"
+            >
+              How to Play
+            </button>
           </div>
         </div>
 
-        {/* XP Bar */}
-        <div className="w-full bg-gray-800 rounded-full h-6 relative overflow-hidden border border-gray-700">
-          <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
-            style={{ width: `${progressToNextLevel}%` }}
-          ></div>
-          <p className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white tracking-widest uppercase">
-            Level {level} • {xp} XP
-          </p>
+        {/* Instructions Modal */}
+        {showInstructions && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="bg-gray-900 border border-gray-700 p-8 rounded-2xl max-w-md w-full relative">
+              <button
+                onClick={() => setShowInstructions(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+              <h2 className="text-2xl font-bold mb-4 text-teal-400">
+                How to use
+              </h2>
+              <ul className="space-y-3 text-gray-300">
+                <li>1. Allow camera access.</li>
+                <li>2. Choose an exercise (e.g., Left Curl).</li>
+                <li>
+                  3. Stand back until the{" "}
+                  <span className="text-teal-400 font-bold">Skeleton</span>{" "}
+                  appears.
+                </li>
+                <li>4. Complete full reps to earn XP!</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // --- ACTIVE WORKOUT UI ---
+  return (
+    <div className="bg-gray-900 min-h-screen text-white p-4 lg:p-8 flex flex-col items-center">
+      {/* Navbar / Header */}
+      <div className="w-full max-w-7xl flex justify-between items-center mb-6">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setAppState("intro")}
+            className="bg-gray-800 p-2 rounded-lg hover:bg-gray-700 text-sm"
+          >
+            ← Exit
+          </button>
+          <h1 className="text-2xl font-bold">AI Trainer</h1>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-right hidden sm:block">
+            <p className="text-xs text-gray-400 uppercase">Best</p>
+            <p className="text-xl font-bold text-yellow-400">{best}</p>
+          </div>
+          <select
+            value={exercise}
+            onChange={(e) => setExercise(e.target.value)}
+            className="bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="left_curl">Left Curl</option>
+            <option value="right_curl">Right Curl</option>
+            <option value="squat">Squats</option>
+            <option value="jumping_jack">Jumping Jacks</option>
+          </select>
         </div>
       </div>
 
-      {/* 2. Main Grid Layout */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {/* LEFT COL: Camera & Feedback */}
+      {/* XP Bar */}
+      <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
+        <div
+          className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+          style={{ width: `${progressToNextLevel}%` }}
+        ></div>
+        <p className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white tracking-widest uppercase">
+          Level {level} • {xp} XP
+        </p>
+      </div>
+
+      {/* Main Grid */}
+      <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        {/* LEFT COL: Camera */}
         <div className="flex flex-col gap-4">
           <div className="relative border-4 border-gray-700 rounded-2xl overflow-hidden shadow-2xl bg-black w-full aspect-video">
             {!isReady && (
@@ -372,7 +461,6 @@ function App() {
               style={{ transform: "scaleX(-1)" }}
             />
 
-            {/* HUD */}
             <div className="absolute top-4 left-4">
               <div className="bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 border-teal-500 shadow-lg">
                 <span className="text-gray-400 text-xs uppercase tracking-wider block mb-1">
@@ -384,7 +472,6 @@ function App() {
               </div>
             </div>
 
-            {/* Feedback */}
             <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2">
               <div
                 className={`px-6 py-3 rounded-full backdrop-blur font-bold text-xl transition-all duration-300 shadow-xl
@@ -409,9 +496,8 @@ function App() {
           </button>
         </div>
 
-        {/* RIGHT COL: Analytics & History */}
+        {/* RIGHT COL: Analytics */}
         <div className="grid grid-rows-[auto_1fr] gap-4 h-full">
-          {/* Chart */}
           <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl h-80 flex flex-col">
             <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4">
               Performance Trend
@@ -457,14 +543,12 @@ function App() {
                       strokeWidth: 3,
                       r: 4,
                     }}
-                    activeDot={{ r: 8, fill: "#2DD4BF" }}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* History List */}
           <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl max-h-80 overflow-y-auto custom-scrollbar">
             <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4 sticky top-0 bg-gray-800 pb-2 border-b border-gray-700">
               Today's Sessions
@@ -472,7 +556,6 @@ function App() {
             {history.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-gray-600">
                 <p className="text-sm italic">No sets completed yet.</p>
-                <p className="text-xs mt-1">Start moving to see data here!</p>
               </div>
             ) : (
               <div className="space-y-3">
