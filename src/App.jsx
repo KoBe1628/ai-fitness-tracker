@@ -22,6 +22,7 @@ function App() {
   // --- APP STATE ---
   const [appState, setAppState] = useState("intro"); // 'intro' | 'active'
   const [showInstructions, setShowInstructions] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
 
   // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
@@ -41,6 +42,7 @@ function App() {
   const curlStateRef = useRef("rest");
   const exerciseRef = useRef("left_curl");
   const hasBrokenRecord = useRef(false);
+  const isMutedRef = useRef(false); // Ref for audio inside loops
 
   // Computed Level
   const level = Math.floor(xp / 100) + 1;
@@ -115,7 +117,13 @@ function App() {
     setXp(parseInt(savedXp));
   }, [exercise]);
 
+  // Sync Mute Ref
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
   function speak(text) {
+    if (isMutedRef.current) return;
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -203,7 +211,15 @@ function App() {
         p3.score > 0.3
       ) {
         setConfidence(Math.round(p2.score * 100));
-        drawSegment(ctx, p1, p2, p3);
+
+        // --- DYNAMIC COLOR LOGIC ---
+        // Cyan = Resting/Down, Green/Yellow = Active/Up
+        let skeletonColor = "#00ffcc"; // Default Cyan
+        if (curlStateRef.current === "active") {
+          skeletonColor = "#a3e635"; // Lime Green
+        }
+
+        drawSegment(ctx, p1, p2, p3, skeletonColor);
         const angle = calculateAngle(p1, p2, p3);
         analyzeRep(angle, config);
       }
@@ -271,6 +287,11 @@ function App() {
       speak(newCount.toString());
     }
     setTimeout(() => setFeedback("Go!"), 1000);
+
+    if (!isMutedRef.current) {
+      popSound.currentTime = 0;
+      popSound.play().catch((e) => console.log(e));
+    }
   }
 
   function finishSet() {
@@ -298,20 +319,24 @@ function App() {
     setTimeout(() => setFeedback("Go!"), 2000);
   }
 
-  function drawSegment(ctx, p1, p2, p3) {
+  function drawSegment(ctx, p1, p2, p3, color) {
     ctx.save();
     ctx.scale(-1, 1);
     ctx.translate(-canvasRef.current.width, 0);
-    ctx.shadowColor = "#00ffcc";
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = 8;
+
+    // Dynamic Glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 15;
+    ctx.lineWidth = 10;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "#00ffcc";
+    ctx.strokeStyle = color;
+
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
     ctx.lineTo(p3.x, p3.y);
     ctx.stroke();
+
     ctx.fillStyle = "#ffffff";
     [p1, p2, p3].forEach((p) => {
       ctx.beginPath();
@@ -339,7 +364,7 @@ function App() {
           <div className="mb-8 inline-block p-4 rounded-full bg-gray-800/50 backdrop-blur border border-gray-700">
             <span className="text-2xl">🤖</span>
           </div>
-          <h1 className="text-6xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-600">
+          <h1 className="text-6xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-600 animate-gradient">
             AI Fitness Trainer
           </h1>
           <p className="text-gray-300 text-xl mb-12 leading-relaxed">
@@ -405,7 +430,7 @@ function App() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setAppState("intro")}
-            className="bg-gray-800 p-2 rounded-lg hover:bg-gray-700 text-sm"
+            className="bg-gray-800 p-2 rounded-lg hover:bg-gray-700 text-sm border border-gray-700"
           >
             ← Exit
           </button>
@@ -413,6 +438,18 @@ function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Mute Toggle */}
+          <button
+            onClick={() => setIsMuted(!isMuted)}
+            className={`p-2 rounded-lg border ${
+              isMuted
+                ? "bg-red-500/20 border-red-500 text-red-400"
+                : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+            }`}
+          >
+            {isMuted ? "🔇" : "🔊"}
+          </button>
+
           <div className="text-right hidden sm:block">
             <p className="text-xs text-gray-400 uppercase">Best</p>
             <p className="text-xl font-bold text-yellow-400">{best}</p>
