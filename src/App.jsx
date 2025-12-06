@@ -1,16 +1,24 @@
-import React, { useRef, useEffect, useState } from "react"; // <--- MAKE SURE TO COPY THIS LINE!
+import React, { useRef, useEffect, useState } from "react";
+// 1. Import Recharts components
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 
-// ==========================================
-//  FINAL POLISHED VERSION (Voice Coach Edition)
-//  - "Thunder" Model (High Accuracy)
-//  - WebGL Backend (Crash Fix)
-//  - AI Voice Coach (Text-to-Speech)
-//  - Multi-Exercise Support
-//  - Session History (Sets)
-// ==========================================
 import * as poseDetection from "@tensorflow-models/pose-detection";
 import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
+
+// --- SOUND SETUP ---
+const popSound = new Audio(
+  "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
+);
+// const popSound = new Audio('/pop.mp3'); // Use local file for best results
 
 function App() {
   const videoRef = useRef(null);
@@ -20,10 +28,15 @@ function App() {
   const [count, setCount] = useState(0);
   const [history, setHistory] = useState([]);
   const [best, setBest] = useState(0);
+  const [xp, setXp] = useState(0); // Gamification XP
   const [feedback, setFeedback] = useState("Loading AI...");
   const [exercise, setExercise] = useState("left_curl");
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
+
+  // Computed Level (100 XP per level)
+  const level = Math.floor(xp / 100) + 1;
+  const progressToNextLevel = xp % 100;
 
   // Refs for logic
   const detectorRef = useRef(null);
@@ -31,14 +44,14 @@ function App() {
   const curlStateRef = useRef("rest");
   const startedRef = useRef(false);
   const exerciseRef = useRef("left_curl");
-  const hasBrokenRecord = useRef(false); // Prevents repetitive "New Record" voice
+  const hasBrokenRecord = useRef(false);
 
   const EXERCISES = {
     left_curl: {
       name: "Left Bicep Curl",
       joints: ["left_shoulder", "left_elbow", "left_wrist"],
       thresholds: { active: 60, rest: 140 },
-      type: "curl",
+      type: "curl", // Angle decreases to activate
     },
     right_curl: {
       name: "Right Bicep Curl",
@@ -50,7 +63,14 @@ function App() {
       name: "Squat",
       joints: ["left_hip", "left_knee", "left_ankle"],
       thresholds: { active: 100, rest: 160 },
-      type: "squat",
+      type: "squat", // Angle decreases to activate
+    },
+    jumping_jack: {
+      name: "Jumping Jacks",
+      // Track shoulder abduction: Hip -> Shoulder -> Elbow
+      joints: ["right_hip", "right_shoulder", "right_elbow"],
+      thresholds: { active: 140, rest: 30 }, // Arms go UP (>140) to activate
+      type: "jack",
     },
   };
 
@@ -67,28 +87,33 @@ function App() {
     };
   }, []);
 
-  // Update exercise & Load saved high score
+  // Update exercise & Load saved data
   useEffect(() => {
     exerciseRef.current = exercise;
     setCount(0);
     countRef.current = 0;
     curlStateRef.current = "rest";
-    setHistory([]);
+    hasBrokenRecord.current = false;
     setFeedback("Go!");
-    hasBrokenRecord.current = false; // Reset record flag on exercise change
 
     const savedBest = localStorage.getItem(`best_${exercise}`) || 0;
     setBest(parseInt(savedBest));
+
+    // Load history for charts
+    const savedHistory =
+      JSON.parse(localStorage.getItem(`history_${exercise}`)) || [];
+    setHistory(savedHistory);
+
+    const savedXp = localStorage.getItem("total_xp") || 0;
+    setXp(parseInt(savedXp));
   }, [exercise]);
 
-  // --- VOICE COACH HELPER ---
+  // Voice Coach
   function speak(text) {
     if ("speechSynthesis" in window) {
-      // Cancel any currently speaking text to avoid overlap
       window.speechSynthesis.cancel();
-
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.2; // Slightly faster for energy
+      utterance.rate = 1.2;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       window.speechSynthesis.speak(utterance);
@@ -111,7 +136,7 @@ function App() {
 
       await setupCamera();
       setIsReady(true);
-      speak("System Ready. Let's workout.");
+      speak("System Ready.");
       detectPose();
     } catch (error) {
       console.error("Init Error:", error);
@@ -205,18 +230,21 @@ function App() {
     const { thresholds, type } = config;
     const current = curlStateRef.current;
 
-    if (type === "curl") {
+    // Logic for Curls & Squats (Angle goes DOWN to start, UP to finish)
+    if (type === "curl" || type === "squat") {
       if (angle > thresholds.rest) {
         curlStateRef.current = "rest";
       } else if (angle < thresholds.active && current === "rest") {
         curlStateRef.current = "active";
         completeRep();
       }
-    } else if (type === "squat") {
-      if (angle < thresholds.active) {
-        curlStateRef.current = "active";
-      } else if (angle > thresholds.rest && current === "active") {
-        curlStateRef.current = "rest";
+    }
+    // Logic for Jumping Jacks (Angle goes UP to start/active)
+    else if (type === "jack") {
+      if (angle < thresholds.rest) {
+        curlStateRef.current = "rest"; // Arms down
+      } else if (angle > thresholds.active && current === "rest") {
+        curlStateRef.current = "active"; // Arms up
         completeRep();
       }
     }
@@ -227,7 +255,13 @@ function App() {
     const newCount = countRef.current;
     setCount(newCount);
 
-    // Check High Score
+    // XP Logic
+    setXp((prev) => {
+      const newXp = prev + 10;
+      localStorage.setItem("total_xp", newXp);
+      return newXp;
+    });
+
     const currentExercise = exerciseRef.current;
     const currentBest = parseInt(
       localStorage.getItem(`best_${currentExercise}`) || 0
@@ -238,7 +272,6 @@ function App() {
       localStorage.setItem(`best_${currentExercise}`, newCount);
       setFeedback("NEW RECORD!");
 
-      // Voice Logic: Only say "New Record" once per set streak
       if (!hasBrokenRecord.current) {
         speak("New Record!");
         hasBrokenRecord.current = true;
@@ -247,7 +280,6 @@ function App() {
       }
     } else {
       setFeedback("Nice Rep!");
-      // Speak the number
       speak(newCount.toString());
     }
 
@@ -257,23 +289,28 @@ function App() {
   function finishSet() {
     if (countRef.current === 0) return;
 
-    const newHistory = [
-      ...history,
-      {
-        reps: countRef.current,
-        time: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      },
-    ];
-    setHistory(newHistory);
+    // Create new history entry
+    const newEntry = {
+      reps: countRef.current,
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      id: Date.now(),
+    };
 
-    speak("Set Saved. Great job.");
+    const newHistory = [...history, newEntry];
+    setHistory(newHistory);
+    localStorage.setItem(
+      `history_${exerciseRef.current}`,
+      JSON.stringify(newHistory)
+    );
+
+    speak("Set Saved.");
 
     countRef.current = 0;
     setCount(0);
-    hasBrokenRecord.current = false; // Reset record flag
+    hasBrokenRecord.current = false;
     setFeedback("Set Saved!");
     setTimeout(() => setFeedback("Go!"), 2000);
   }
@@ -304,9 +341,22 @@ function App() {
     ctx.restore();
   }
 
+  const chartData = history.length > 0 ? history : [{ reps: 0, time: "Start" }];
+
   return (
-    <div className="bg-gray-900 min-h-screen text-white flex flex-col items-center p-4">
-      {/* Header & Controls */}
+    <div className="bg-gray-900 min-h-screen text-white flex flex-col items-center p-4 pb-20">
+      {/* XP PROGRESS BAR */}
+      <div className="w-full max-w-2xl mb-4 bg-gray-800 rounded-full h-4 relative overflow-hidden border border-gray-700">
+        <div
+          className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+          style={{ width: `${progressToNextLevel}%` }}
+        ></div>
+        <p className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white tracking-widest">
+          LEVEL {level} • {xp} XP
+        </p>
+      </div>
+
+      {/* Header */}
       <div className="w-full max-w-2xl flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-500">
@@ -325,9 +375,11 @@ function App() {
           <option value="left_curl">Left Curl</option>
           <option value="right_curl">Right Curl</option>
           <option value="squat">Squats</option>
+          <option value="jumping_jack">Jumping Jacks</option>
         </select>
       </div>
 
+      {/* Main Vision Area */}
       <div className="relative border-4 border-gray-700 rounded-2xl overflow-hidden shadow-2xl w-full max-w-2xl bg-black">
         {!isReady && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-gray-900/90">
@@ -374,7 +426,6 @@ function App() {
         </div>
       </div>
 
-      {/* FINISH SET BUTTON */}
       <button
         onClick={finishSet}
         className="mt-6 w-full max-w-2xl bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-700 hover:to-teal-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition active:scale-95"
@@ -382,29 +433,71 @@ function App() {
         Finish Set & Save
       </button>
 
-      {/* SESSION HISTORY */}
-      <div className="w-full max-w-2xl mt-8">
-        <h3 className="text-gray-400 text-sm uppercase tracking-widest mb-3">
-          Session History
-        </h3>
-        {history.length === 0 ? (
-          <p className="text-gray-600 text-sm italic">No sets completed yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {history.map((set, index) => (
-              <div
-                key={index}
-                className="flex justify-between items-center bg-gray-800 p-3 rounded-lg border border-gray-700"
-              >
-                <span className="font-bold text-teal-400">Set {index + 1}</span>
-                <div className="flex gap-4 text-sm">
-                  <span className="text-white">{set.reps} Reps</span>
-                  <span className="text-gray-500">{set.time}</span>
+      {/* --- VISUAL ANALYTICS --- */}
+      <div className="w-full max-w-2xl mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* History List */}
+        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 h-64 overflow-y-auto">
+          <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-3 sticky top-0 bg-gray-800 pb-2">
+            Session History
+          </h3>
+          {history.length === 0 ? (
+            <p className="text-gray-600 text-sm italic">No sets yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {history.map((set, index) => (
+                <div
+                  key={set.id}
+                  className="flex justify-between items-center bg-gray-700/50 p-2 rounded border border-gray-600"
+                >
+                  <span className="font-bold text-teal-400 text-sm">
+                    Set {index + 1}
+                  </span>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-white">{set.reps} Reps</span>
+                    <span className="text-gray-400">{set.time}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Chart */}
+        <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 h-64 flex flex-col">
+          <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-2">
+            Performance Trend
+          </h3>
+          <div className="flex-1 w-full min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis
+                  dataKey="time"
+                  stroke="#9CA3AF"
+                  fontSize={10}
+                  tick={false}
+                />
+                <YAxis stroke="#9CA3AF" fontSize={10} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#1F2937",
+                    border: "none",
+                    borderRadius: "8px",
+                  }}
+                  itemStyle={{ color: "#2DD4BF" }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="reps"
+                  stroke="#2DD4BF"
+                  strokeWidth={3}
+                  dot={{ fill: "#2DD4BF", strokeWidth: 2 }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
