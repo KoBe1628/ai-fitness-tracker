@@ -13,7 +13,6 @@ import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
 
 // --- SOUND SETUP ---
-// Fixed URL: Removed the extra markdown brackets that caused the crash
 const popSound = new Audio(
   "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
 );
@@ -27,6 +26,7 @@ function App() {
 
   // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
+  const [calories, setCalories] = useState(0); // Track calories
   const [history, setHistory] = useState([]);
   const [best, setBest] = useState(0);
   const [xp, setXp] = useState(0);
@@ -40,7 +40,7 @@ function App() {
   const canvasRef = useRef(null);
   const detectorRef = useRef(null);
   const countRef = useRef(0);
-  const curlStateRef = useRef("rest"); // 'rest' | 'descending' | 'active'
+  const curlStateRef = useRef("rest");
   const exerciseRef = useRef("left_curl");
   const hasBrokenRecord = useRef(false);
   const isMutedRef = useRef(false);
@@ -55,24 +55,28 @@ function App() {
       joints: ["left_shoulder", "left_elbow", "left_wrist"],
       thresholds: { active: 60, rest: 140 },
       type: "curl",
+      calPerRep: 0.5,
     },
     right_curl: {
       name: "Right Bicep Curl",
       joints: ["right_shoulder", "right_elbow", "right_wrist"],
       thresholds: { active: 60, rest: 140 },
       type: "curl",
+      calPerRep: 0.5,
     },
     squat: {
       name: "Squat",
       joints: ["left_hip", "left_knee", "left_ankle"],
       thresholds: { active: 100, rest: 160 },
       type: "squat",
+      calPerRep: 1.2,
     },
     jumping_jack: {
       name: "Jumping Jacks",
       joints: ["right_hip", "right_shoulder", "right_elbow"],
       thresholds: { active: 140, rest: 30 },
       type: "jack",
+      calPerRep: 1.5,
     },
   };
 
@@ -208,12 +212,11 @@ function App() {
       ) {
         setConfidence(Math.round(p2.score * 100));
 
-        // --- DYNAMIC COLOR ---
-        let skeletonColor = "#00ffcc"; // Cyan (Rest)
+        let skeletonColor = "#00ffcc";
         if (curlStateRef.current === "active") {
-          skeletonColor = "#a3e635"; // Lime Green (Good Rep zone)
+          skeletonColor = "#a3e635";
         } else if (curlStateRef.current === "descending") {
-          skeletonColor = "#facc15"; // Yellow (Moving)
+          skeletonColor = "#facc15";
         }
 
         drawSegment(ctx, p1, p2, p3, skeletonColor);
@@ -236,31 +239,13 @@ function App() {
     const { thresholds, type } = config;
     const current = curlStateRef.current;
 
-    // --- FORM CORRECTION LOGIC ---
     if (type === "squat") {
-      // Squat: Rest > 160, Active < 100
       if (angle > thresholds.rest) {
-        // Returning to Start
         if (current === "active") {
-          completeRep();
+          completeRep(config);
         } else if (current === "descending") {
-          // They went down, but not deep enough!
           setFeedback("Go Lower!");
           speak("Go Lower");
-        }
-        curlStateRef.current = "rest";
-      } else if (angle < thresholds.active) {
-        curlStateRef.current = "active"; // Good depth hit
-      } else if (angle < thresholds.rest && current === "rest") {
-        curlStateRef.current = "descending"; // Started moving
-      }
-    } else if (type === "curl") {
-      // Curl: Rest > 140, Active < 60
-      if (angle > thresholds.rest) {
-        if (current === "active") {
-          completeRep();
-        } else if (current === "descending") {
-          setFeedback("Full Range!"); // Didn't curl high enough
         }
         curlStateRef.current = "rest";
       } else if (angle < thresholds.active) {
@@ -268,22 +253,36 @@ function App() {
       } else if (angle < thresholds.rest && current === "rest") {
         curlStateRef.current = "descending";
       }
-    }
-    // Jumping Jacks (Simple Toggle)
-    else if (type === "jack") {
+    } else if (type === "curl") {
+      if (angle > thresholds.rest) {
+        if (current === "active") {
+          completeRep(config);
+        } else if (current === "descending") {
+          setFeedback("Full Range!");
+        }
+        curlStateRef.current = "rest";
+      } else if (angle < thresholds.active) {
+        curlStateRef.current = "active";
+      } else if (angle < thresholds.rest && current === "rest") {
+        curlStateRef.current = "descending";
+      }
+    } else if (type === "jack") {
       if (angle < thresholds.rest) {
         curlStateRef.current = "rest";
       } else if (angle > thresholds.active && current === "rest") {
         curlStateRef.current = "active";
-        completeRep();
+        completeRep(config);
       }
     }
   }
 
-  function completeRep() {
+  function completeRep(config) {
     countRef.current += 1;
     const newCount = countRef.current;
     setCount(newCount);
+
+    // Calculate Calories
+    setCalories((prev) => Math.round((prev + config.calPerRep) * 10) / 10);
 
     setXp((prev) => {
       const newXp = prev + 10;
@@ -311,7 +310,6 @@ function App() {
       speak(newCount.toString());
     }
 
-    // Play "Pop" sound
     if (!isMutedRef.current) {
       popSound.currentTime = 0;
       popSound.play().catch((e) => console.log(e));
@@ -349,20 +347,16 @@ function App() {
     ctx.save();
     ctx.scale(-1, 1);
     ctx.translate(-canvasRef.current.width, 0);
-
-    // Dynamic Glow
     ctx.shadowColor = color;
     ctx.shadowBlur = 15;
     ctx.lineWidth = 10;
     ctx.lineCap = "round";
     ctx.strokeStyle = color;
-
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
     ctx.lineTo(p3.x, p3.y);
     ctx.stroke();
-
     ctx.fillStyle = "#ffffff";
     [p1, p2, p3].forEach((p) => {
       ctx.beginPath();
@@ -521,7 +515,9 @@ function App() {
               style={{ transform: "scaleX(-1)" }}
             />
 
-            <div className="absolute top-4 left-4">
+            {/* HUD: Reps & Calories */}
+            <div className="absolute top-4 left-4 flex flex-col gap-2">
+              {/* Reps */}
               <div className="bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 border-teal-500 shadow-lg">
                 <span className="text-gray-400 text-xs uppercase tracking-wider block mb-1">
                   Reps
@@ -529,6 +525,18 @@ function App() {
                 <span className="text-5xl font-mono font-bold text-white leading-none">
                   {count}
                 </span>
+              </div>
+              {/* Calories */}
+              <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-xl border-l-4 border-orange-500 shadow-lg flex items-center gap-2">
+                <span className="text-xl">🔥</span>
+                <div>
+                  <span className="text-gray-400 text-[10px] uppercase tracking-wider block">
+                    Burn
+                  </span>
+                  <span className="text-lg font-mono font-bold text-white leading-none">
+                    {calories}
+                  </span>
+                </div>
               </div>
             </div>
 
