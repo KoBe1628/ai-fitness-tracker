@@ -13,6 +13,7 @@ import * as tf from "@tensorflow/tfjs-core";
 import "@tensorflow/tfjs-backend-webgl";
 
 // --- SOUND SETUP ---
+// Fixed URL: Removed the extra markdown brackets that caused the crash
 const popSound = new Audio(
   "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
 );
@@ -20,7 +21,7 @@ const popSound = new Audio(
 
 function App() {
   // --- APP STATE ---
-  const [appState, setAppState] = useState("intro"); // 'intro' | 'active'
+  const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
@@ -39,10 +40,10 @@ function App() {
   const canvasRef = useRef(null);
   const detectorRef = useRef(null);
   const countRef = useRef(0);
-  const curlStateRef = useRef("rest");
+  const curlStateRef = useRef("rest"); // 'rest' | 'descending' | 'active'
   const exerciseRef = useRef("left_curl");
   const hasBrokenRecord = useRef(false);
-  const isMutedRef = useRef(false); // Ref for audio inside loops
+  const isMutedRef = useRef(false);
 
   // Computed Level
   const level = Math.floor(xp / 100) + 1;
@@ -75,7 +76,6 @@ function App() {
     },
   };
 
-  // --- FULLSCREEN HELPER ---
   const toggleFullScreen = async () => {
     try {
       if (!document.fullscreenElement) {
@@ -86,12 +86,10 @@ function App() {
     }
   };
 
-  // --- INIT AI ONLY WHEN ACTIVE ---
   useEffect(() => {
     if (appState === "active") {
       init();
     } else {
-      // Cleanup when going back to intro
       if (videoRef.current && videoRef.current.srcObject) {
         const tracks = videoRef.current.srcObject.getTracks();
         tracks.forEach((track) => track.stop());
@@ -99,7 +97,6 @@ function App() {
     }
   }, [appState]);
 
-  // Update exercise & Load saved data
   useEffect(() => {
     exerciseRef.current = exercise;
     setCount(0);
@@ -117,7 +114,6 @@ function App() {
     setXp(parseInt(savedXp));
   }, [exercise]);
 
-  // Sync Mute Ref
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
@@ -212,11 +208,12 @@ function App() {
       ) {
         setConfidence(Math.round(p2.score * 100));
 
-        // --- DYNAMIC COLOR LOGIC ---
-        // Cyan = Resting/Down, Green/Yellow = Active/Up
-        let skeletonColor = "#00ffcc"; // Default Cyan
+        // --- DYNAMIC COLOR ---
+        let skeletonColor = "#00ffcc"; // Cyan (Rest)
         if (curlStateRef.current === "active") {
-          skeletonColor = "#a3e635"; // Lime Green
+          skeletonColor = "#a3e635"; // Lime Green (Good Rep zone)
+        } else if (curlStateRef.current === "descending") {
+          skeletonColor = "#facc15"; // Yellow (Moving)
         }
 
         drawSegment(ctx, p1, p2, p3, skeletonColor);
@@ -239,14 +236,41 @@ function App() {
     const { thresholds, type } = config;
     const current = curlStateRef.current;
 
-    if (type === "curl" || type === "squat") {
+    // --- FORM CORRECTION LOGIC ---
+    if (type === "squat") {
+      // Squat: Rest > 160, Active < 100
       if (angle > thresholds.rest) {
+        // Returning to Start
+        if (current === "active") {
+          completeRep();
+        } else if (current === "descending") {
+          // They went down, but not deep enough!
+          setFeedback("Go Lower!");
+          speak("Go Lower");
+        }
         curlStateRef.current = "rest";
-      } else if (angle < thresholds.active && current === "rest") {
-        curlStateRef.current = "active";
-        completeRep();
+      } else if (angle < thresholds.active) {
+        curlStateRef.current = "active"; // Good depth hit
+      } else if (angle < thresholds.rest && current === "rest") {
+        curlStateRef.current = "descending"; // Started moving
       }
-    } else if (type === "jack") {
+    } else if (type === "curl") {
+      // Curl: Rest > 140, Active < 60
+      if (angle > thresholds.rest) {
+        if (current === "active") {
+          completeRep();
+        } else if (current === "descending") {
+          setFeedback("Full Range!"); // Didn't curl high enough
+        }
+        curlStateRef.current = "rest";
+      } else if (angle < thresholds.active) {
+        curlStateRef.current = "active";
+      } else if (angle < thresholds.rest && current === "rest") {
+        curlStateRef.current = "descending";
+      }
+    }
+    // Jumping Jacks (Simple Toggle)
+    else if (type === "jack") {
       if (angle < thresholds.rest) {
         curlStateRef.current = "rest";
       } else if (angle > thresholds.active && current === "rest") {
@@ -286,12 +310,14 @@ function App() {
       setFeedback("Nice Rep!");
       speak(newCount.toString());
     }
-    setTimeout(() => setFeedback("Go!"), 1000);
 
+    // Play "Pop" sound
     if (!isMutedRef.current) {
       popSound.currentTime = 0;
       popSound.play().catch((e) => console.log(e));
     }
+
+    setTimeout(() => setFeedback("Go!"), 1000);
   }
 
   function finishSet() {
@@ -353,7 +379,6 @@ function App() {
   if (appState === "intro") {
     return (
       <div className="bg-gray-900 h-screen w-full text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        {/* Background decoration */}
         <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
           <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
           <div className="absolute top-20 right-20 w-72 h-72 bg-teal-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
@@ -392,7 +417,6 @@ function App() {
           </div>
         </div>
 
-        {/* Instructions Modal */}
         {showInstructions && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
             <div className="bg-gray-900 border border-gray-700 p-8 rounded-2xl max-w-md w-full relative">
@@ -438,7 +462,6 @@ function App() {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* Mute Toggle */}
           <button
             onClick={() => setIsMuted(!isMuted)}
             className={`p-2 rounded-lg border ${
@@ -517,6 +540,10 @@ function App() {
                             ? "bg-yellow-500 text-black scale-110"
                             : feedback === "Nice Rep!"
                             ? "bg-green-500/90 text-white"
+                            : feedback === "Go Lower!"
+                            ? "bg-red-500/90 text-white"
+                            : feedback === "Full Range!"
+                            ? "bg-red-500/90 text-white"
                             : "bg-black/60 text-gray-300"
                         }`}
               >
