@@ -22,14 +22,18 @@ function App() {
   // --- APP STATE ---
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showSettings, setShowSettings] = useState(false); // New: Settings Modal
   const [isMuted, setIsMuted] = useState(false);
+  const [difficulty, setDifficulty] = useState("normal"); // 'easy' | 'normal' | 'hard'
 
   // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
-  const [calories, setCalories] = useState(0); // Track calories
+  const [calories, setCalories] = useState(0);
   const [history, setHistory] = useState([]);
   const [best, setBest] = useState(0);
   const [xp, setXp] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [dailyTotal, setDailyTotal] = useState(0);
   const [feedback, setFeedback] = useState("Loading AI...");
   const [exercise, setExercise] = useState("left_curl");
   const [confidence, setConfidence] = useState(0);
@@ -44,40 +48,71 @@ function App() {
   const exerciseRef = useRef("left_curl");
   const hasBrokenRecord = useRef(false);
   const isMutedRef = useRef(false);
+  const difficultyRef = useRef("normal"); // Ref for loop access
 
   // Computed Level
   const level = Math.floor(xp / 100) + 1;
   const progressToNextLevel = xp % 100;
+  const DAILY_GOAL = 50;
+  const dailyProgress = Math.min((dailyTotal / DAILY_GOAL) * 100, 100);
 
-  const EXERCISES = {
+  // Base configurations
+  const BASE_EXERCISES = {
     left_curl: {
       name: "Left Bicep Curl",
       joints: ["left_shoulder", "left_elbow", "left_wrist"],
-      thresholds: { active: 60, rest: 140 },
       type: "curl",
       calPerRep: 0.5,
     },
     right_curl: {
       name: "Right Bicep Curl",
       joints: ["right_shoulder", "right_elbow", "right_wrist"],
-      thresholds: { active: 60, rest: 140 },
       type: "curl",
       calPerRep: 0.5,
     },
     squat: {
       name: "Squat",
       joints: ["left_hip", "left_knee", "left_ankle"],
-      thresholds: { active: 100, rest: 160 },
       type: "squat",
       calPerRep: 1.2,
     },
     jumping_jack: {
       name: "Jumping Jacks",
       joints: ["right_hip", "right_shoulder", "right_elbow"],
-      thresholds: { active: 140, rest: 30 },
       type: "jack",
       calPerRep: 1.5,
     },
+  };
+
+  // Difficulty Modifiers (How strict the angles are)
+  const DIFFICULTY_MODS = {
+    easy: { active: 20, rest: -20 }, // Easier to hit "Active", Easier to return to "Rest"
+    normal: { active: 0, rest: 0 },
+    hard: { active: -20, rest: 10 }, // Must go deeper (Active), Must extend fully (Rest)
+  };
+
+  const getThresholds = (type, diff) => {
+    const mod = DIFFICULTY_MODS[diff];
+    // Base Thresholds
+    let t = { active: 0, rest: 0 };
+
+    if (type === "curl") {
+      t = { active: 60, rest: 140 };
+    } else if (type === "squat") {
+      t = { active: 100, rest: 160 };
+    } else if (type === "jack") {
+      t = { active: 140, rest: 30 };
+    }
+
+    // Apply Modifier
+    // For Curls/Squats: Lower angle = More Active. So Easy = +Active (Less deep), Hard = -Active (Deeper)
+    if (type === "curl" || type === "squat") {
+      return { active: t.active + mod.active, rest: t.rest + mod.rest };
+    }
+    // For Jacks: Higher angle = More Active. So Easy = -Active (Lower arms), Hard = +Active (Higher arms)
+    else {
+      return { active: t.active - mod.active, rest: t.rest - mod.rest };
+    }
   };
 
   const toggleFullScreen = async () => {
@@ -101,26 +136,34 @@ function App() {
     }
   }, [appState]);
 
+  // Sync Refs
   useEffect(() => {
     exerciseRef.current = exercise;
+    difficultyRef.current = difficulty;
+    isMutedRef.current = isMuted;
+  }, [exercise, difficulty, isMuted]);
+
+  // Load Saved Data
+  useEffect(() => {
     setCount(0);
     countRef.current = 0;
     curlStateRef.current = "rest";
     hasBrokenRecord.current = false;
     setFeedback("Go!");
 
-    const savedBest = localStorage.getItem(`best_${exercise}`) || 0;
-    setBest(parseInt(savedBest));
-    const savedHistory =
-      JSON.parse(localStorage.getItem(`history_${exercise}`)) || [];
-    setHistory(savedHistory);
-    const savedXp = localStorage.getItem("total_xp") || 0;
-    setXp(parseInt(savedXp));
-  }, [exercise]);
+    setBest(parseInt(localStorage.getItem(`best_${exercise}`) || 0));
+    setHistory(JSON.parse(localStorage.getItem(`history_${exercise}`)) || []);
+    setXp(parseInt(localStorage.getItem("total_xp") || 0));
+    setStreak(parseInt(localStorage.getItem("streak") || 0));
 
-  useEffect(() => {
-    isMutedRef.current = isMuted;
-  }, [isMuted]);
+    const storedDate = localStorage.getItem("lastWorkoutDate");
+    const today = new Date().toDateString();
+    if (storedDate === today) {
+      setDailyTotal(parseInt(localStorage.getItem("dailyTotal") || 0));
+    } else {
+      setDailyTotal(0);
+    }
+  }, [exercise]);
 
   function speak(text) {
     if (isMutedRef.current) return;
@@ -196,8 +239,10 @@ function App() {
 
     if (poses.length > 0) {
       const pose = poses[0];
-      const config = EXERCISES[exerciseRef.current];
-      const [p1Name, p2Name, p3Name] = config.joints;
+      const exConfig = BASE_EXERCISES[exerciseRef.current];
+      const thresholds = getThresholds(exConfig.type, difficultyRef.current);
+
+      const [p1Name, p2Name, p3Name] = exConfig.joints;
       const p1 = pose.keypoints.find((k) => k.name === p1Name);
       const p2 = pose.keypoints.find((k) => k.name === p2Name);
       const p3 = pose.keypoints.find((k) => k.name === p3Name);
@@ -221,7 +266,7 @@ function App() {
 
         drawSegment(ctx, p1, p2, p3, skeletonColor);
         const angle = calculateAngle(p1, p2, p3);
-        analyzeRep(angle, config);
+        analyzeRep(angle, thresholds, exConfig);
       }
     }
     requestAnimationFrame(detectPose);
@@ -235,8 +280,8 @@ function App() {
     return angle;
   }
 
-  function analyzeRep(angle, config) {
-    const { thresholds, type } = config;
+  function analyzeRep(angle, thresholds, config) {
+    const type = config.type;
     const current = curlStateRef.current;
 
     if (type === "squat") {
@@ -281,7 +326,6 @@ function App() {
     const newCount = countRef.current;
     setCount(newCount);
 
-    // Calculate Calories
     setCalories((prev) => Math.round((prev + config.calPerRep) * 10) / 10);
 
     setXp((prev) => {
@@ -320,6 +364,7 @@ function App() {
 
   function finishSet() {
     if (countRef.current === 0) return;
+
     const newEntry = {
       reps: countRef.current,
       time: new Date().toLocaleTimeString([], {
@@ -334,6 +379,29 @@ function App() {
       `history_${exerciseRef.current}`,
       JSON.stringify(newHistory)
     );
+
+    const today = new Date().toDateString();
+    const lastDate = localStorage.getItem("lastWorkoutDate");
+
+    let newDaily = dailyTotal + countRef.current;
+    if (lastDate !== today) {
+      newDaily = countRef.current;
+    }
+    setDailyTotal(newDaily);
+    localStorage.setItem("dailyTotal", newDaily);
+
+    if (lastDate !== today) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      let newStreak = 1;
+      if (lastDate === yesterday.toDateString()) {
+        newStreak = streak + 1;
+      }
+      setStreak(newStreak);
+      localStorage.setItem("streak", newStreak);
+      speak(`${newStreak} Day Streak!`);
+    }
+    localStorage.setItem("lastWorkoutDate", today);
 
     speak("Set Saved.");
     countRef.current = 0;
@@ -367,8 +435,6 @@ function App() {
   }
 
   const chartData = history.length > 0 ? history : [{ reps: 0, time: "Start" }];
-
-  // --- RENDER LOGIC ---
 
   if (appState === "intro") {
     return (
@@ -443,19 +509,75 @@ function App() {
   // --- ACTIVE WORKOUT UI ---
   return (
     <div className="bg-gray-900 min-h-screen text-white p-4 lg:p-8 flex flex-col items-center">
-      {/* Navbar / Header */}
-      <div className="w-full max-w-7xl flex justify-between items-center mb-6">
-        <div className="flex items-center gap-3">
+      {/* Header with Widget */}
+      <div className="w-full max-w-7xl flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+        <div className="flex items-center gap-3 w-full md:w-auto">
           <button
             onClick={() => setAppState("intro")}
             className="bg-gray-800 p-2 rounded-lg hover:bg-gray-700 text-sm border border-gray-700"
           >
             ← Exit
           </button>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="bg-gray-800 p-2 rounded-lg hover:bg-gray-700 text-sm border border-gray-700"
+          >
+            ⚙️
+          </button>
           <h1 className="text-2xl font-bold">AI Trainer</h1>
         </div>
 
-        <div className="flex items-center gap-4">
+        {/* Daily Goal Widget */}
+        <div className="flex items-center gap-6 bg-gray-800/50 p-2 px-4 rounded-xl border border-gray-700">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🔥</span>
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase font-bold">
+                Streak
+              </span>
+              <p className="text-white font-bold leading-none">{streak} Days</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative w-10 h-10">
+              <svg className="w-full h-full transform -rotate-90">
+                <circle
+                  cx="20"
+                  cy="20"
+                  r="16"
+                  stroke="#374151"
+                  strokeWidth="4"
+                  fill="transparent"
+                />
+                <circle
+                  cx="20"
+                  cy="20"
+                  r="16"
+                  stroke="#2DD4BF"
+                  strokeWidth="4"
+                  fill="transparent"
+                  strokeDasharray="100"
+                  strokeDashoffset={100 - dailyProgress}
+                  className="transition-all duration-500"
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
+                {Math.round(dailyProgress)}%
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] text-gray-400 uppercase font-bold">
+                Daily Goal
+              </span>
+              <p className="text-white font-bold leading-none">
+                {dailyTotal} / {DAILY_GOAL}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 w-full md:w-auto justify-end">
           <button
             onClick={() => setIsMuted(!isMuted)}
             className={`p-2 rounded-lg border ${
@@ -467,10 +589,6 @@ function App() {
             {isMuted ? "🔇" : "🔊"}
           </button>
 
-          <div className="text-right hidden sm:block">
-            <p className="text-xs text-gray-400 uppercase">Best</p>
-            <p className="text-xl font-bold text-yellow-400">{best}</p>
-          </div>
           <select
             value={exercise}
             onChange={(e) => setExercise(e.target.value)}
@@ -483,6 +601,36 @@ function App() {
           </select>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="absolute top-20 left-4 z-50 bg-gray-900 border border-gray-700 p-6 rounded-xl shadow-2xl w-64">
+          <h3 className="font-bold text-teal-400 mb-4">Settings</h3>
+          <div className="mb-4">
+            <label className="text-xs text-gray-400 uppercase block mb-2">
+              Difficulty
+            </label>
+            <div className="flex flex-col gap-2">
+              {["easy", "normal", "hard"].map((level) => (
+                <button
+                  key={level}
+                  onClick={() => setDifficulty(level)}
+                  className={`px-3 py-2 rounded text-sm capitalize border ${
+                    difficulty === level
+                      ? "bg-teal-500/20 border-teal-500 text-teal-400"
+                      : "bg-gray-800 border-gray-600 text-gray-300"
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-500">
+            Hard mode requires deeper squats and full extension.
+          </p>
+        </div>
+      )}
 
       {/* XP Bar */}
       <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
@@ -517,7 +665,6 @@ function App() {
 
             {/* HUD: Reps & Calories */}
             <div className="absolute top-4 left-4 flex flex-col gap-2">
-              {/* Reps */}
               <div className="bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 border-teal-500 shadow-lg">
                 <span className="text-gray-400 text-xs uppercase tracking-wider block mb-1">
                   Reps
@@ -526,7 +673,6 @@ function App() {
                   {count}
                 </span>
               </div>
-              {/* Calories */}
               <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-xl border-l-4 border-orange-500 shadow-lg flex items-center gap-2">
                 <span className="text-xl">🔥</span>
                 <div>
