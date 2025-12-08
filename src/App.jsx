@@ -22,9 +22,10 @@ function App() {
   // --- APP STATE ---
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
-  const [showSettings, setShowSettings] = useState(false); // New: Settings Modal
+  const [showSettings, setShowSettings] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [difficulty, setDifficulty] = useState("normal"); // 'easy' | 'normal' | 'hard'
+  const [difficulty, setDifficulty] = useState("normal");
+  const [gameMode, setGameMode] = useState("standard"); // 'standard' | 'challenge'
 
   // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
@@ -39,6 +40,10 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
+  // Challenge State
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [isGameOver, setIsGameOver] = useState(false);
+
   // Refs
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -48,7 +53,8 @@ function App() {
   const exerciseRef = useRef("left_curl");
   const hasBrokenRecord = useRef(false);
   const isMutedRef = useRef(false);
-  const difficultyRef = useRef("normal"); // Ref for loop access
+  const difficultyRef = useRef("normal");
+  const gameModeRef = useRef("standard");
 
   // Computed Level
   const level = Math.floor(xp / 100) + 1;
@@ -56,7 +62,6 @@ function App() {
   const DAILY_GOAL = 50;
   const dailyProgress = Math.min((dailyTotal / DAILY_GOAL) * 100, 100);
 
-  // Base configurations
   const BASE_EXERCISES = {
     left_curl: {
       name: "Left Bicep Curl",
@@ -84,18 +89,22 @@ function App() {
     },
   };
 
-  // Difficulty Modifiers (How strict the angles are)
   const DIFFICULTY_MODS = {
-    easy: { active: 20, rest: -20 }, // Easier to hit "Active", Easier to return to "Rest"
+    easy: { active: 20, rest: -20 },
     normal: { active: 0, rest: 0 },
-    hard: { active: -20, rest: 10 }, // Must go deeper (Active), Must extend fully (Rest)
+    hard: { active: -20, rest: 10 },
   };
+
+  const getRank = (xp) => {
+    if (xp < 100) return { title: "ROOKIE", color: "#2DD4BF" };
+    if (xp < 500) return { title: "ATHLETE", color: "#FACC15" };
+    return { title: "SPARTAN", color: "#D946EF" };
+  };
+  const currentRank = getRank(xp);
 
   const getThresholds = (type, diff) => {
     const mod = DIFFICULTY_MODS[diff];
-    // Base Thresholds
     let t = { active: 0, rest: 0 };
-
     if (type === "curl") {
       t = { active: 60, rest: 140 };
     } else if (type === "squat") {
@@ -104,13 +113,9 @@ function App() {
       t = { active: 140, rest: 30 };
     }
 
-    // Apply Modifier
-    // For Curls/Squats: Lower angle = More Active. So Easy = +Active (Less deep), Hard = -Active (Deeper)
     if (type === "curl" || type === "squat") {
       return { active: t.active + mod.active, rest: t.rest + mod.rest };
-    }
-    // For Jacks: Higher angle = More Active. So Easy = -Active (Lower arms), Hard = +Active (Higher arms)
-    else {
+    } else {
       return { active: t.active - mod.active, rest: t.rest - mod.rest };
     }
   };
@@ -136,14 +141,50 @@ function App() {
     }
   }, [appState]);
 
-  // Sync Refs
   useEffect(() => {
     exerciseRef.current = exercise;
     difficultyRef.current = difficulty;
     isMutedRef.current = isMuted;
-  }, [exercise, difficulty, isMuted]);
+    gameModeRef.current = gameMode;
+  }, [exercise, difficulty, isMuted, gameMode]);
 
-  // Load Saved Data
+  // Challenge Timer
+  useEffect(() => {
+    let interval = null;
+    if (gameMode === "challenge" && timeLeft > 0 && !isGameOver) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0 && gameMode === "challenge" && !isGameOver) {
+      endChallenge();
+    }
+    return () => clearInterval(interval);
+  }, [gameMode, timeLeft, isGameOver]);
+
+  const startChallenge = () => {
+    setGameMode("challenge");
+    setTimeLeft(60);
+    setCount(0);
+    countRef.current = 0;
+    setIsGameOver(false);
+    speak("Challenge Started. 60 seconds. Go!");
+  };
+
+  const endChallenge = () => {
+    setIsGameOver(true);
+    speak("Time's up! Challenge complete.");
+    finishSet(); // Save the challenge result
+  };
+
+  const exitChallenge = () => {
+    setGameMode("standard");
+    setIsGameOver(false);
+    setTimeLeft(60);
+    setCount(0);
+    countRef.current = 0;
+  };
+
+  // Update exercise & Load saved data
   useEffect(() => {
     setCount(0);
     countRef.current = 0;
@@ -257,11 +298,13 @@ function App() {
       ) {
         setConfidence(Math.round(p2.score * 100));
 
-        let skeletonColor = "#00ffcc";
+        let skeletonColor = getRank(
+          parseInt(localStorage.getItem("total_xp") || 0)
+        ).color;
         if (curlStateRef.current === "active") {
-          skeletonColor = "#a3e635";
+          skeletonColor = "#00ff00";
         } else if (curlStateRef.current === "descending") {
-          skeletonColor = "#facc15";
+          skeletonColor = "#ffffff";
         }
 
         drawSegment(ctx, p1, p2, p3, skeletonColor);
@@ -281,6 +324,8 @@ function App() {
   }
 
   function analyzeRep(angle, thresholds, config) {
+    if (isGameOver) return; // Stop counting if game over
+
     const type = config.type;
     const current = curlStateRef.current;
 
@@ -339,15 +384,14 @@ function App() {
       localStorage.getItem(`best_${currentExercise}`) || 0
     );
 
-    if (newCount > currentBest) {
+    // In Challenge Mode, we just count, we don't check 'Best' until the end
+    if (gameModeRef.current !== "challenge" && newCount > currentBest) {
       setBest(newCount);
       localStorage.setItem(`best_${currentExercise}`, newCount);
       setFeedback("NEW RECORD!");
       if (!hasBrokenRecord.current) {
         speak("New Record!");
         hasBrokenRecord.current = true;
-      } else {
-        speak(newCount.toString());
       }
     } else {
       setFeedback("Nice Rep!");
@@ -359,7 +403,10 @@ function App() {
       popSound.play().catch((e) => console.log(e));
     }
 
-    setTimeout(() => setFeedback("Go!"), 1000);
+    // Only reset feedback if game isn't over
+    if (!isGameOver) {
+      setTimeout(() => setFeedback("Go!"), 1000);
+    }
   }
 
   function finishSet() {
@@ -372,6 +419,7 @@ function App() {
         minute: "2-digit",
       }),
       id: Date.now(),
+      mode: gameModeRef.current, // Track if it was a challenge
     };
     const newHistory = [...history, newEntry];
     setHistory(newHistory);
@@ -380,13 +428,12 @@ function App() {
       JSON.stringify(newHistory)
     );
 
+    // Update Daily & Streak
     const today = new Date().toDateString();
     const lastDate = localStorage.getItem("lastWorkoutDate");
 
     let newDaily = dailyTotal + countRef.current;
-    if (lastDate !== today) {
-      newDaily = countRef.current;
-    }
+    if (lastDate !== today) newDaily = countRef.current;
     setDailyTotal(newDaily);
     localStorage.setItem("dailyTotal", newDaily);
 
@@ -394,21 +441,21 @@ function App() {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       let newStreak = 1;
-      if (lastDate === yesterday.toDateString()) {
-        newStreak = streak + 1;
-      }
+      if (lastDate === yesterday.toDateString()) newStreak = streak + 1;
       setStreak(newStreak);
       localStorage.setItem("streak", newStreak);
-      speak(`${newStreak} Day Streak!`);
     }
     localStorage.setItem("lastWorkoutDate", today);
 
-    speak("Set Saved.");
-    countRef.current = 0;
-    setCount(0);
-    hasBrokenRecord.current = false;
-    setFeedback("Set Saved!");
-    setTimeout(() => setFeedback("Go!"), 2000);
+    // If Standard Mode, reset. If Challenge Mode, just save (game over screen handles reset)
+    if (gameModeRef.current === "standard") {
+      speak("Set Saved.");
+      countRef.current = 0;
+      setCount(0);
+      hasBrokenRecord.current = false;
+      setFeedback("Set Saved!");
+      setTimeout(() => setFeedback("Go!"), 2000);
+    }
   }
 
   function drawSegment(ctx, p1, p2, p3, color) {
@@ -439,6 +486,7 @@ function App() {
   if (appState === "intro") {
     return (
       <div className="bg-gray-900 h-screen w-full text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Background decoration */}
         <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
           <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
           <div className="absolute top-20 right-20 w-72 h-72 bg-teal-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
@@ -506,7 +554,6 @@ function App() {
     );
   }
 
-  // --- ACTIVE WORKOUT UI ---
   return (
     <div className="bg-gray-900 min-h-screen text-white p-4 lg:p-8 flex flex-col items-center">
       {/* Header with Widget */}
@@ -524,10 +571,22 @@ function App() {
           >
             ⚙️
           </button>
-          <h1 className="text-2xl font-bold">AI Trainer</h1>
+
+          {/* Challenge Mode Toggle */}
+          <button
+            onClick={gameMode === "standard" ? startChallenge : exitChallenge}
+            className={`p-2 rounded-lg text-sm border font-bold ${
+              gameMode === "challenge"
+                ? "bg-red-500/20 border-red-500 text-red-400"
+                : "bg-gray-800 border-gray-700 text-teal-400 hover:text-white"
+            }`}
+          >
+            {gameMode === "challenge"
+              ? `⏱️ Stop (${timeLeft})`
+              : "⚡ Challenge"}
+          </button>
         </div>
 
-        {/* Daily Goal Widget */}
         <div className="flex items-center gap-6 bg-gray-800/50 p-2 px-4 rounded-xl border border-gray-700">
           <div className="flex items-center gap-2">
             <span className="text-xl">🔥</span>
@@ -538,7 +597,6 @@ function App() {
               <p className="text-white font-bold leading-none">{streak} Days</p>
             </div>
           </div>
-
           <div className="flex items-center gap-2">
             <div className="relative w-10 h-10">
               <svg className="w-full h-full transform -rotate-90">
@@ -554,7 +612,7 @@ function App() {
                   cx="20"
                   cy="20"
                   r="16"
-                  stroke="#2DD4BF"
+                  stroke={currentRank.color}
                   strokeWidth="4"
                   fill="transparent"
                   strokeDasharray="100"
@@ -588,7 +646,10 @@ function App() {
           >
             {isMuted ? "🔇" : "🔊"}
           </button>
-
+          <div className="text-right hidden sm:block">
+            <p className="text-xs text-gray-400 uppercase">Best</p>
+            <p className="text-xl font-bold text-yellow-400">{best}</p>
+          </div>
           <select
             value={exercise}
             onChange={(e) => setExercise(e.target.value)}
@@ -632,6 +693,42 @@ function App() {
         </div>
       )}
 
+      {/* GAME OVER MODAL */}
+      {isGameOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div className="bg-gray-900 border border-teal-500 p-10 rounded-3xl max-w-lg w-full text-center shadow-2xl transform scale-110">
+            <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-blue-500 mb-2">
+              TIME'S UP!
+            </h2>
+            <p className="text-gray-400 mb-8">Challenge Complete</p>
+
+            <div className="text-8xl font-mono font-bold text-white mb-8">
+              {count} <span className="text-2xl text-gray-500">Reps</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="bg-gray-800 p-4 rounded-xl">
+                <p className="text-xs text-gray-400">XP Earned</p>
+                <p className="text-xl font-bold text-yellow-400">
+                  +{count * 10}
+                </p>
+              </div>
+              <div className="bg-gray-800 p-4 rounded-xl">
+                <p className="text-xs text-gray-400">Calories</p>
+                <p className="text-xl font-bold text-orange-400">{calories}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={exitChallenge}
+              className="w-full py-4 bg-teal-600 hover:bg-teal-700 rounded-xl font-bold text-lg text-white"
+            >
+              Close & Save
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* XP Bar */}
       <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
         <div
@@ -639,7 +736,7 @@ function App() {
           style={{ width: `${progressToNextLevel}%` }}
         ></div>
         <p className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white tracking-widest uppercase">
-          Level {level} • {xp} XP
+          {currentRank.title} (Lvl {level}) • {xp} XP
         </p>
       </div>
 
@@ -647,7 +744,13 @@ function App() {
       <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* LEFT COL: Camera */}
         <div className="flex flex-col gap-4">
-          <div className="relative border-4 border-gray-700 rounded-2xl overflow-hidden shadow-2xl bg-black w-full aspect-video">
+          <div
+            className={`relative border-4 ${
+              gameMode === "challenge"
+                ? "border-red-500 shadow-red-500/20"
+                : "border-gray-700"
+            } rounded-2xl overflow-hidden shadow-2xl bg-black w-full aspect-video transition-all duration-300`}
+          >
             {!isReady && (
               <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-gray-900/90">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-400 mb-4"></div>
@@ -663,7 +766,7 @@ function App() {
               style={{ transform: "scaleX(-1)" }}
             />
 
-            {/* HUD: Reps & Calories */}
+            {/* HUD */}
             <div className="absolute top-4 left-4 flex flex-col gap-2">
               <div className="bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 border-teal-500 shadow-lg">
                 <span className="text-gray-400 text-xs uppercase tracking-wider block mb-1">
@@ -686,32 +789,40 @@ function App() {
               </div>
             </div>
 
+            {/* Challenge Timer Overlay */}
+            {gameMode === "challenge" && (
+              <div className="absolute top-4 right-4 bg-red-600/90 backdrop-blur px-6 py-3 rounded-xl shadow-lg border-2 border-white animate-pulse">
+                <span className="text-white text-xs uppercase font-bold block mb-1">
+                  Time Left
+                </span>
+                <span className="text-4xl font-mono font-black text-white">
+                  {timeLeft}
+                </span>
+              </div>
+            )}
+
             <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2">
               <div
-                className={`px-6 py-3 rounded-full backdrop-blur font-bold text-xl transition-all duration-300 shadow-xl
-                        ${
-                          feedback === "NEW RECORD!"
-                            ? "bg-yellow-500 text-black scale-110"
-                            : feedback === "Nice Rep!"
-                            ? "bg-green-500/90 text-white"
-                            : feedback === "Go Lower!"
-                            ? "bg-red-500/90 text-white"
-                            : feedback === "Full Range!"
-                            ? "bg-red-500/90 text-white"
-                            : "bg-black/60 text-gray-300"
-                        }`}
+                className={`px-6 py-3 rounded-full backdrop-blur font-bold text-xl transition-all duration-300 shadow-xl ${
+                  feedback.includes("RECORD")
+                    ? "bg-yellow-500 text-black scale-110"
+                    : "bg-black/60 text-gray-300"
+                }`}
               >
                 {feedback}
               </div>
             </div>
           </div>
 
-          <button
-            onClick={finishSet}
-            className="w-full bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-700 hover:to-teal-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 text-lg tracking-wide uppercase"
-          >
-            Finish Set & Save Progress
-          </button>
+          {/* Hide normal button in challenge mode */}
+          {gameMode !== "challenge" && (
+            <button
+              onClick={finishSet}
+              className="w-full bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-700 hover:to-teal-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 text-lg tracking-wide uppercase"
+            >
+              Finish Set & Save Progress
+            </button>
+          )}
         </div>
 
         {/* RIGHT COL: Analytics */}
@@ -783,11 +894,23 @@ function App() {
                   .map((set, index) => (
                     <div
                       key={set.id}
-                      className="flex justify-between items-center bg-gray-700/30 p-4 rounded-xl border border-gray-700/50 hover:bg-gray-700/50 transition-colors"
+                      className={`flex justify-between items-center bg-gray-700/30 p-4 rounded-xl border border-gray-700/50 hover:bg-gray-700/50 transition-colors ${
+                        set.mode === "challenge"
+                          ? "border-l-4 border-l-red-500"
+                          : ""
+                      }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 font-bold text-sm">
-                          {history.length - index}
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                            set.mode === "challenge"
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-teal-500/20 text-teal-400"
+                          }`}
+                        >
+                          {set.mode === "challenge"
+                            ? "⚡"
+                            : history.length - index}
                         </div>
                         <span className="font-medium text-white">
                           {set.reps} Reps
