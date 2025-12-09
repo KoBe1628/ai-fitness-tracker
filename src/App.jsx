@@ -309,6 +309,10 @@ function App() {
 
         drawSegment(ctx, p1, p2, p3, skeletonColor);
         const angle = calculateAngle(p1, p2, p3);
+
+        // NEW: Draw AR HUD at the joint
+        drawAngleHud(ctx, p2, angle, skeletonColor);
+
         analyzeRep(angle, thresholds, exConfig);
       }
     }
@@ -456,6 +460,41 @@ function App() {
       setFeedback("Set Saved!");
       setTimeout(() => setFeedback("Go!"), 2000);
     }
+  }
+
+  // --- NEW: Draw HUD (Angle Arc) ---
+  function drawAngleHud(ctx, center, angle, color) {
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.translate(-canvasRef.current.width, 0);
+
+    // Semi-transparent background
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 40, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fill();
+
+    // Angle Text
+    ctx.fillStyle = "white";
+    ctx.font = "bold 16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(Math.round(angle) + "°", center.x, center.y);
+
+    // Progress Arc (Visual feedback)
+    ctx.beginPath();
+    // Draw a partial ring based on angle (mapped 0-180)
+    // 180 = 0% full (Start), 0 = 100% full (Finish for curl)
+    const radius = 35;
+    const startAngle = -Math.PI / 2; // Top
+    const endAngle = startAngle + Math.PI * 2 * (1 - angle / 180); // Fill as angle gets smaller (for curl)
+
+    ctx.arc(center.x, center.y, radius, startAngle, endAngle, true); // Counter clockwise if needed, or adjust math
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   function drawSegment(ctx, p1, p2, p3, color) {
