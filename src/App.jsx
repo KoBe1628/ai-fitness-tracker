@@ -97,6 +97,7 @@ function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
+  // State
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -105,6 +106,7 @@ function App() {
   const [gameMode, setGameMode] = useState("standard");
   const [showCalories, setShowCalories] = useState(true);
   const [zenMode, setZenMode] = useState(false);
+  const [privacyMode, setPrivacyMode] = useState(false);
 
   const [count, setCount] = useState(0);
   const [calories, setCalories] = useState(0);
@@ -119,10 +121,16 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
+  // Tempo State
+  const [lastRepTime, setLastRepTime] = useState(0);
+  const [tempoStatus, setTempoStatus] = useState("good"); // 'good', 'fast', 'slow'
+
   const [muscleData, setMuscleData] = useState({ arms: 0, legs: 0, core: 0 });
   const [timeLeft, setTimeLeft] = useState(60);
   const [restTimer, setRestTimer] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [showReportCard, setShowReportCard] = useState(false);
+  const [reportData, setReportData] = useState({ reps: 0, xp: 0, cals: 0 });
 
   const detectorRef = useRef(null);
   const countRef = useRef(0);
@@ -133,6 +141,9 @@ function App() {
   const difficultyRef = useRef("normal");
   const gameModeRef = useRef("standard");
   const weightRef = useRef(70);
+  const showReportCardRef = useRef(false);
+  const privacyModeRef = useRef(false);
+  const lastRepTimestampRef = useRef(Date.now()); // For tempo calculation
 
   const level = Math.floor(xp / 100) + 1;
   const progressToNextLevel = xp % 100;
@@ -169,7 +180,6 @@ function App() {
     };
   };
 
-  // FIX: Define currentRank AND theme
   const currentRank = getRank(xp);
   const theme = currentRank;
 
@@ -180,6 +190,7 @@ function App() {
       type: "curl",
       calPerRep: 0.4,
       muscle: "arms",
+      isCardio: false,
     },
     right_curl: {
       name: "Right Bicep Curl",
@@ -187,6 +198,7 @@ function App() {
       type: "curl",
       calPerRep: 0.4,
       muscle: "arms",
+      isCardio: false,
     },
     squat: {
       name: "Squat",
@@ -194,6 +206,7 @@ function App() {
       type: "squat",
       calPerRep: 1.2,
       muscle: "legs",
+      isCardio: false,
     },
     jumping_jack: {
       name: "Jumping Jacks",
@@ -201,6 +214,7 @@ function App() {
       type: "jack",
       calPerRep: 1.5,
       muscle: "core",
+      isCardio: true,
     },
   };
 
@@ -263,8 +277,19 @@ function App() {
     isMutedRef.current = isMuted;
     gameModeRef.current = gameMode;
     weightRef.current = weight;
-  }, [exercise, difficulty, isMuted, gameMode, weight]);
+    showReportCardRef.current = showReportCard;
+    privacyModeRef.current = privacyMode;
+  }, [
+    exercise,
+    difficulty,
+    isMuted,
+    gameMode,
+    weight,
+    showReportCard,
+    privacyMode,
+  ]);
 
+  // Load Saved Data
   useEffect(() => {
     setCount(0);
     countRef.current = 0;
@@ -414,6 +439,12 @@ function App() {
       requestAnimationFrame(detectPose);
       return;
     }
+
+    if (showReportCardRef.current) {
+      requestAnimationFrame(detectPose);
+      return;
+    }
+
     const poses = await detectorRef.current.estimatePoses(videoRef.current);
     const ctx = canvasRef.current.getContext("2d");
 
@@ -439,6 +470,10 @@ function App() {
       const p1 = pose.keypoints.find((k) => k.name === p1Name);
       const p2 = pose.keypoints.find((k) => k.name === p2Name);
       const p3 = pose.keypoints.find((k) => k.name === p3Name);
+
+      if (privacyModeRef.current) {
+        drawFaceMask(ctx, pose);
+      }
 
       if (
         p1 &&
@@ -521,6 +556,39 @@ function App() {
   }
 
   function completeRep(config) {
+    // --- TEMPO METER LOGIC ---
+    const now = Date.now();
+    const duration = (now - lastRepTimestampRef.current) / 1000;
+    lastRepTimestampRef.current = now;
+
+    let tempoStatus = "good";
+    let tempoMsg = "";
+
+    if (config.isCardio) {
+      // Cardio: Faster is better
+      if (duration < 1.0) {
+        tempoStatus = "fast"; // Good for cardio
+        tempoMsg = "🔥 Great Speed!";
+      } else if (duration > 2.0) {
+        tempoStatus = "slow"; // Bad for cardio
+        tempoMsg = "Push Harder!";
+      } else {
+        tempoMsg = "Good Pace";
+      }
+    } else {
+      // Strength: Controlled is better
+      if (duration < 1.5) {
+        tempoStatus = "fast"; // Bad for strength
+        tempoMsg = "⚠️ Too Fast!";
+      } else {
+        tempoMsg = "Good Control";
+      }
+    }
+
+    // Update Tempo UI
+    setLastRepTime(duration.toFixed(1));
+    setTempoStatus(tempoStatus);
+
     countRef.current += 1;
     const newCount = countRef.current;
     setCount(newCount);
@@ -546,18 +614,28 @@ function App() {
       localStorage.getItem(`best_${currentExercise}`) || 0
     );
 
+    // Announce logic
+    let speechText = newCount.toString();
+    let feedbackText = tempoMsg; // Show tempo feedback by default
+
     if (gameModeRef.current !== "challenge" && newCount > currentBest) {
       setBest(newCount);
       localStorage.setItem(`best_${currentExercise}`, newCount);
-      setFeedback("NEW RECORD!");
+      feedbackText = "NEW RECORD!";
       if (!hasBrokenRecord.current) {
-        speak("New Record!");
+        speechText = "New Record!";
         hasBrokenRecord.current = true;
       }
-    } else {
-      setFeedback("Nice Rep!");
-      speak(newCount.toString());
     }
+
+    // Prioritize tempo warning voice for Strength
+    if (!config.isCardio && tempoStatus === "fast") {
+      speechText = "Slow Down";
+      feedbackText = "⚠️ Too Fast!";
+    }
+
+    setFeedback(feedbackText);
+    speak(speechText);
 
     if (!isMutedRef.current) {
       popSound.currentTime = 0;
@@ -565,15 +643,23 @@ function App() {
     }
 
     if (!isGameOver) {
-      setTimeout(() => setFeedback("Go!"), 1000);
+      setTimeout(() => setFeedback("Go!"), 1500);
     }
   }
 
   function finishSet() {
     if (countRef.current === 0) return;
 
+    const reps = countRef.current;
+    const exName = BASE_EXERCISES[exerciseRef.current].name;
+    const config = BASE_EXERCISES[exerciseRef.current];
+    const weightFactor = weightRef.current / 70;
+    const calsBurned =
+      Math.round(reps * config.calPerRep * weightFactor * 10) / 10;
+    const xpEarned = reps * 10;
+
     const newEntry = {
-      reps: countRef.current,
+      reps: reps,
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -591,17 +677,14 @@ function App() {
     const today = new Date().toDateString();
     const lastDate = localStorage.getItem("lastWorkoutDate");
 
-    let newDaily = dailyTotal + countRef.current;
-    if (lastDate !== today) newDaily = countRef.current;
+    let newDaily = dailyTotal + reps;
+    if (lastDate !== today) newDaily = reps;
     setDailyTotal(newDaily);
     localStorage.setItem("dailyTotal", newDaily);
 
-    // Update Muscle Data
-    const exConfig = BASE_EXERCISES[exerciseRef.current];
-    const muscleGroup = exConfig.muscle;
+    const muscleGroup = config.muscle;
     const currentMuscleVal = muscleData[muscleGroup];
-    const newMuscleVal = currentMuscleVal + countRef.current;
-
+    const newMuscleVal = currentMuscleVal + reps;
     setMuscleData((prev) => ({ ...prev, [muscleGroup]: newMuscleVal }));
     localStorage.setItem(`muscle_${muscleGroup}`, newMuscleVal);
 
@@ -615,13 +698,39 @@ function App() {
     }
     localStorage.setItem("lastWorkoutDate", today);
 
+    setReportData({ reps, xp: xpEarned, cals: calsBurned, exercise: exName });
+    setShowReportCard(true);
+
     if (gameModeRef.current === "standard") {
-      setRestTimer(45);
+      speak("Set Saved.");
       countRef.current = 0;
       setCount(0);
       hasBrokenRecord.current = false;
-      setFeedback("Set Saved!");
     }
+  }
+
+  const closeReportCard = () => {
+    setShowReportCard(false);
+    setRestTimer(45);
+  };
+
+  function drawFaceMask(ctx, pose) {
+    const nose = pose.keypoints.find((k) => k.name === "nose");
+    const leftEar = pose.keypoints.find((k) => k.name === "left_ear");
+    const rightEar = pose.keypoints.find((k) => k.name === "right_ear");
+    if (!nose || nose.score < 0.3) return;
+    let size = 60;
+    if (leftEar && rightEar && leftEar.score > 0.3 && rightEar.score > 0.3) {
+      size = Math.abs(leftEar.x - rightEar.x) * 2;
+    }
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.translate(-canvasRef.current.width, 0);
+    ctx.font = `${size}px serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("🤖", nose.x, nose.y);
+    ctx.restore();
   }
 
   function drawAngleHud(ctx, center, angle, color) {
@@ -763,7 +872,17 @@ function App() {
             ⚙️
           </button>
 
-          {/* Zen Mode Toggle */}
+          <button
+            onClick={() => setPrivacyMode(!privacyMode)}
+            className={`p-2 rounded-lg text-sm border ${
+              privacyMode
+                ? "bg-indigo-500/20 border-indigo-500 text-indigo-400"
+                : "bg-gray-800 border-gray-700 text-gray-400"
+            }`}
+          >
+            {privacyMode ? "🕵️ Hidden" : "👁️ Visible"}
+          </button>
+
           <button
             onClick={() => setZenMode(!zenMode)}
             className={`p-2 rounded-lg text-sm border ${
@@ -971,6 +1090,58 @@ function App() {
         </div>
       )}
 
+      {/* REPORT CARD MODAL */}
+      {showReportCard && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div
+            className={`bg-gray-900 border ${theme.border} p-8 rounded-3xl max-w-md w-full text-center shadow-2xl animate-fade-in-up`}
+          >
+            <h2
+              className={`text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r ${theme.gradient} mb-2`}
+            >
+              SET COMPLETE!
+            </h2>
+            <p className="text-gray-400 mb-6 font-medium">
+              {reportData.exercise}
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 mb-8">
+              <div className="bg-gray-800 p-3 rounded-xl border border-gray-700">
+                <div className="text-2xl font-bold text-white">
+                  {reportData.reps}
+                </div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                  Reps
+                </div>
+              </div>
+              <div className="bg-gray-800 p-3 rounded-xl border border-gray-700">
+                <div className="text-2xl font-bold text-yellow-400">
+                  +{reportData.xp}
+                </div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                  XP
+                </div>
+              </div>
+              <div className="bg-gray-800 p-3 rounded-xl border border-gray-700">
+                <div className="text-2xl font-bold text-orange-400">
+                  {reportData.cals}
+                </div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                  Cals
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={closeReportCard}
+              className={`w-full py-3 bg-gradient-to-r ${theme.gradient} hover:opacity-90 rounded-xl font-bold text-lg text-white shadow-lg transform transition hover:scale-105`}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* XP Bar - Hide in Zen Mode */}
       {!zenMode && (
         <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
@@ -1048,6 +1219,20 @@ function App() {
                   </span>
                 </div>
               )}
+
+              {/* TEMPO METER */}
+              <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-xl border-l-4 border-purple-500 shadow-lg mt-1">
+                <span className="text-gray-400 text-[10px] uppercase tracking-wider block">
+                  Tempo
+                </span>
+                <div
+                  className={`text-lg font-bold ${
+                    tempoStatus === "good" ? "text-green-400" : "text-red-400"
+                  }`}
+                >
+                  {lastRepTime}s
+                </div>
+              </div>
             </div>
 
             {/* Challenge Timer Overlay */}
@@ -1063,7 +1248,7 @@ function App() {
             )}
 
             {/* Rest Timer Overlay */}
-            {restTimer > 0 && (
+            {restTimer > 0 && !showReportCard && (
               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
                 <h3
                   className={`text-2xl font-bold ${theme.text} mb-2 animate-pulse`}
