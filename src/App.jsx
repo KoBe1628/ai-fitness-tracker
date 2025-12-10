@@ -25,7 +25,9 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [difficulty, setDifficulty] = useState("normal");
-  const [gameMode, setGameMode] = useState("standard"); // 'standard' | 'challenge'
+  const [gameMode, setGameMode] = useState("standard");
+  const [showCalories, setShowCalories] = useState(true);
+  const [zenMode, setZenMode] = useState(false); // New: Zen Mode Toggle
 
   // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
@@ -35,13 +37,15 @@ function App() {
   const [xp, setXp] = useState(0);
   const [streak, setStreak] = useState(0);
   const [dailyTotal, setDailyTotal] = useState(0);
+  const [weight, setWeight] = useState(70);
   const [feedback, setFeedback] = useState("Loading AI...");
   const [exercise, setExercise] = useState("left_curl");
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
-  // Challenge State
-  const [timeLeft, setTimeLeft] = useState(60);
+  // Timers
+  const [timeLeft, setTimeLeft] = useState(60); // For Challenge
+  const [restTimer, setRestTimer] = useState(0); // For Rest Timer
   const [isGameOver, setIsGameOver] = useState(false);
 
   // Refs
@@ -55,6 +59,7 @@ function App() {
   const isMutedRef = useRef(false);
   const difficultyRef = useRef("normal");
   const gameModeRef = useRef("standard");
+  const weightRef = useRef(70);
 
   // Computed Level
   const level = Math.floor(xp / 100) + 1;
@@ -67,13 +72,13 @@ function App() {
       name: "Left Bicep Curl",
       joints: ["left_shoulder", "left_elbow", "left_wrist"],
       type: "curl",
-      calPerRep: 0.5,
+      calPerRep: 0.4,
     },
     right_curl: {
       name: "Right Bicep Curl",
       joints: ["right_shoulder", "right_elbow", "right_wrist"],
       type: "curl",
-      calPerRep: 0.5,
+      calPerRep: 0.4,
     },
     squat: {
       name: "Squat",
@@ -101,6 +106,14 @@ function App() {
     return { title: "SPARTAN", color: "#D946EF" };
   };
   const currentRank = getRank(xp);
+
+  const getFoodEquivalent = (kcal) => {
+    if (kcal < 15) return "Burning up...";
+    if (kcal < 50) return "1 Gummy Bear 🍬";
+    if (kcal < 100) return "1 Apple 🍎";
+    if (kcal < 250) return "1 Taco 🌮";
+    return "1 Burger 🍔";
+  };
 
   const getThresholds = (type, diff) => {
     const mod = DIFFICULTY_MODS[diff];
@@ -146,7 +159,8 @@ function App() {
     difficultyRef.current = difficulty;
     isMutedRef.current = isMuted;
     gameModeRef.current = gameMode;
-  }, [exercise, difficulty, isMuted, gameMode]);
+    weightRef.current = weight;
+  }, [exercise, difficulty, isMuted, gameMode, weight]);
 
   // Challenge Timer
   useEffect(() => {
@@ -161,6 +175,20 @@ function App() {
     return () => clearInterval(interval);
   }, [gameMode, timeLeft, isGameOver]);
 
+  // Rest Timer
+  useEffect(() => {
+    let interval = null;
+    if (restTimer > 0) {
+      interval = setInterval(() => {
+        setRestTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (restTimer === 0 && interval) {
+      // Optional: Play sound when rest ends
+      if (!isMuted) speak("Rest complete. Let's go.");
+    }
+    return () => clearInterval(interval);
+  }, [restTimer]);
+
   const startChallenge = () => {
     setGameMode("challenge");
     setTimeLeft(60);
@@ -173,7 +201,7 @@ function App() {
   const endChallenge = () => {
     setIsGameOver(true);
     speak("Time's up! Challenge complete.");
-    finishSet(); // Save the challenge result
+    finishSet();
   };
 
   const exitChallenge = () => {
@@ -197,6 +225,12 @@ function App() {
     setXp(parseInt(localStorage.getItem("total_xp") || 0));
     setStreak(parseInt(localStorage.getItem("streak") || 0));
 
+    const savedWeight = localStorage.getItem("user_weight");
+    if (savedWeight) setWeight(parseInt(savedWeight));
+
+    const savedShowCal = localStorage.getItem("show_calories");
+    if (savedShowCal !== null) setShowCalories(savedShowCal === "true");
+
     const storedDate = localStorage.getItem("lastWorkoutDate");
     const today = new Date().toDateString();
     if (storedDate === today) {
@@ -205,6 +239,18 @@ function App() {
       setDailyTotal(0);
     }
   }, [exercise]);
+
+  const handleWeightChange = (e) => {
+    const w = parseInt(e.target.value);
+    setWeight(w);
+    localStorage.setItem("user_weight", w);
+  };
+
+  const toggleCalories = () => {
+    const newVal = !showCalories;
+    setShowCalories(newVal);
+    localStorage.setItem("show_calories", newVal);
+  };
 
   function speak(text) {
     if (isMutedRef.current) return;
@@ -310,9 +356,7 @@ function App() {
         drawSegment(ctx, p1, p2, p3, skeletonColor);
         const angle = calculateAngle(p1, p2, p3);
 
-        // NEW: Draw AR HUD at the joint
         drawAngleHud(ctx, p2, angle, skeletonColor);
-
         analyzeRep(angle, thresholds, exConfig);
       }
     }
@@ -328,7 +372,7 @@ function App() {
   }
 
   function analyzeRep(angle, thresholds, config) {
-    if (isGameOver) return; // Stop counting if game over
+    if (isGameOver) return;
 
     const type = config.type;
     const current = curlStateRef.current;
@@ -375,7 +419,10 @@ function App() {
     const newCount = countRef.current;
     setCount(newCount);
 
-    setCalories((prev) => Math.round((prev + config.calPerRep) * 10) / 10);
+    const weightFactor = weightRef.current / 70;
+    const calEarned = config.calPerRep * weightFactor;
+
+    setCalories((prev) => Math.round((prev + calEarned) * 10) / 10);
 
     setXp((prev) => {
       const newXp = prev + 10;
@@ -388,7 +435,6 @@ function App() {
       localStorage.getItem(`best_${currentExercise}`) || 0
     );
 
-    // In Challenge Mode, we just count, we don't check 'Best' until the end
     if (gameModeRef.current !== "challenge" && newCount > currentBest) {
       setBest(newCount);
       localStorage.setItem(`best_${currentExercise}`, newCount);
@@ -407,7 +453,6 @@ function App() {
       popSound.play().catch((e) => console.log(e));
     }
 
-    // Only reset feedback if game isn't over
     if (!isGameOver) {
       setTimeout(() => setFeedback("Go!"), 1000);
     }
@@ -423,7 +468,7 @@ function App() {
         minute: "2-digit",
       }),
       id: Date.now(),
-      mode: gameModeRef.current, // Track if it was a challenge
+      mode: gameModeRef.current,
     };
     const newHistory = [...history, newEntry];
     setHistory(newHistory);
@@ -432,7 +477,6 @@ function App() {
       JSON.stringify(newHistory)
     );
 
-    // Update Daily & Streak
     const today = new Date().toDateString();
     const lastDate = localStorage.getItem("lastWorkoutDate");
 
@@ -451,49 +495,36 @@ function App() {
     }
     localStorage.setItem("lastWorkoutDate", today);
 
-    // If Standard Mode, reset. If Challenge Mode, just save (game over screen handles reset)
     if (gameModeRef.current === "standard") {
-      speak("Set Saved.");
+      setRestTimer(45); // Start 45s Rest Timer
       countRef.current = 0;
       setCount(0);
       hasBrokenRecord.current = false;
       setFeedback("Set Saved!");
-      setTimeout(() => setFeedback("Go!"), 2000);
     }
   }
 
-  // --- NEW: Draw HUD (Angle Arc) ---
   function drawAngleHud(ctx, center, angle, color) {
     ctx.save();
     ctx.scale(-1, 1);
     ctx.translate(-canvasRef.current.width, 0);
-
-    // Semi-transparent background
     ctx.beginPath();
     ctx.arc(center.x, center.y, 40, 0, 2 * Math.PI);
     ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
     ctx.fill();
-
-    // Angle Text
     ctx.fillStyle = "white";
     ctx.font = "bold 16px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(Math.round(angle) + "°", center.x, center.y);
-
-    // Progress Arc (Visual feedback)
     ctx.beginPath();
-    // Draw a partial ring based on angle (mapped 0-180)
-    // 180 = 0% full (Start), 0 = 100% full (Finish for curl)
     const radius = 35;
-    const startAngle = -Math.PI / 2; // Top
-    const endAngle = startAngle + Math.PI * 2 * (1 - angle / 180); // Fill as angle gets smaller (for curl)
-
-    ctx.arc(center.x, center.y, radius, startAngle, endAngle, true); // Counter clockwise if needed, or adjust math
+    const startAngle = -Math.PI / 2;
+    const endAngle = startAngle + Math.PI * 2 * (1 - angle / 180);
+    ctx.arc(center.x, center.y, radius, startAngle, endAngle, true);
     ctx.lineWidth = 6;
     ctx.strokeStyle = color;
     ctx.stroke();
-
     ctx.restore();
   }
 
@@ -525,7 +556,6 @@ function App() {
   if (appState === "intro") {
     return (
       <div className="bg-gray-900 h-screen w-full text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        {/* Background decoration */}
         <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
           <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
           <div className="absolute top-20 right-20 w-72 h-72 bg-teal-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
@@ -611,7 +641,18 @@ function App() {
             ⚙️
           </button>
 
-          {/* Challenge Mode Toggle */}
+          {/* Zen Mode Toggle */}
+          <button
+            onClick={() => setZenMode(!zenMode)}
+            className={`p-2 rounded-lg text-sm border ${
+              zenMode
+                ? "bg-purple-500/20 border-purple-500 text-purple-400"
+                : "bg-gray-800 border-gray-700 text-gray-400"
+            }`}
+          >
+            {zenMode ? "🧘 Active" : "🧘 Zen"}
+          </button>
+
           <button
             onClick={gameMode === "standard" ? startChallenge : exitChallenge}
             className={`p-2 rounded-lg text-sm border font-bold ${
@@ -626,53 +667,58 @@ function App() {
           </button>
         </div>
 
-        <div className="flex items-center gap-6 bg-gray-800/50 p-2 px-4 rounded-xl border border-gray-700">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🔥</span>
-            <div>
-              <span className="text-[10px] text-gray-400 uppercase font-bold">
-                Streak
-              </span>
-              <p className="text-white font-bold leading-none">{streak} Days</p>
+        {/* Widgets - Hide in Zen Mode */}
+        {!zenMode && (
+          <div className="flex items-center gap-6 bg-gray-800/50 p-2 px-4 rounded-xl border border-gray-700">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🔥</span>
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase font-bold">
+                  Streak
+                </span>
+                <p className="text-white font-bold leading-none">
+                  {streak} Days
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative w-10 h-10">
+                <svg className="w-full h-full transform -rotate-90">
+                  <circle
+                    cx="20"
+                    cy="20"
+                    r="16"
+                    stroke="#374151"
+                    strokeWidth="4"
+                    fill="transparent"
+                  />
+                  <circle
+                    cx="20"
+                    cy="20"
+                    r="16"
+                    stroke={currentRank.color}
+                    strokeWidth="4"
+                    fill="transparent"
+                    strokeDasharray="100"
+                    strokeDashoffset={100 - dailyProgress}
+                    className="transition-all duration-500"
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
+                  {Math.round(dailyProgress)}%
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase font-bold">
+                  Daily Goal
+                </span>
+                <p className="text-white font-bold leading-none">
+                  {dailyTotal} / {DAILY_GOAL}
+                </p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative w-10 h-10">
-              <svg className="w-full h-full transform -rotate-90">
-                <circle
-                  cx="20"
-                  cy="20"
-                  r="16"
-                  stroke="#374151"
-                  strokeWidth="4"
-                  fill="transparent"
-                />
-                <circle
-                  cx="20"
-                  cy="20"
-                  r="16"
-                  stroke={currentRank.color}
-                  strokeWidth="4"
-                  fill="transparent"
-                  strokeDasharray="100"
-                  strokeDashoffset={100 - dailyProgress}
-                  className="transition-all duration-500"
-                />
-              </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">
-                {Math.round(dailyProgress)}%
-              </span>
-            </div>
-            <div>
-              <span className="text-[10px] text-gray-400 uppercase font-bold">
-                Daily Goal
-              </span>
-              <p className="text-white font-bold leading-none">
-                {dailyTotal} / {DAILY_GOAL}
-              </p>
-            </div>
-          </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-4 w-full md:w-auto justify-end">
           <button
@@ -685,10 +731,12 @@ function App() {
           >
             {isMuted ? "🔇" : "🔊"}
           </button>
-          <div className="text-right hidden sm:block">
-            <p className="text-xs text-gray-400 uppercase">Best</p>
-            <p className="text-xl font-bold text-yellow-400">{best}</p>
-          </div>
+          {!zenMode && (
+            <div className="text-right hidden sm:block">
+              <p className="text-xs text-gray-400 uppercase">Best</p>
+              <p className="text-xl font-bold text-yellow-400">{best}</p>
+            </div>
+          )}
           <select
             value={exercise}
             onChange={(e) => setExercise(e.target.value)}
@@ -726,6 +774,34 @@ function App() {
               ))}
             </div>
           </div>
+          <div className="mb-4 flex items-center justify-between">
+            <label className="text-xs text-gray-400 uppercase">
+              Show Calories
+            </label>
+            <button
+              onClick={toggleCalories}
+              className={`w-10 h-5 rounded-full relative transition-colors ${
+                showCalories ? "bg-teal-500" : "bg-gray-600"
+              }`}
+            >
+              <div
+                className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${
+                  showCalories ? "left-6" : "left-1"
+                }`}
+              ></div>
+            </button>
+          </div>
+          <div className="mb-4">
+            <label className="text-xs text-gray-400 uppercase block mb-2">
+              Weight (kg)
+            </label>
+            <input
+              type="number"
+              value={weight}
+              onChange={handleWeightChange}
+              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white focus:ring-2 focus:ring-teal-500 outline-none"
+            />
+          </div>
           <p className="text-[10px] text-gray-500">
             Hard mode requires deeper squats and full extension.
           </p>
@@ -740,11 +816,9 @@ function App() {
               TIME'S UP!
             </h2>
             <p className="text-gray-400 mb-8">Challenge Complete</p>
-
             <div className="text-8xl font-mono font-bold text-white mb-8">
               {count} <span className="text-2xl text-gray-500">Reps</span>
             </div>
-
             <div className="grid grid-cols-2 gap-4 mb-8">
               <div className="bg-gray-800 p-4 rounded-xl">
                 <p className="text-xs text-gray-400">XP Earned</p>
@@ -752,12 +826,15 @@ function App() {
                   +{count * 10}
                 </p>
               </div>
-              <div className="bg-gray-800 p-4 rounded-xl">
-                <p className="text-xs text-gray-400">Calories</p>
-                <p className="text-xl font-bold text-orange-400">{calories}</p>
-              </div>
+              {showCalories && (
+                <div className="bg-gray-800 p-4 rounded-xl">
+                  <p className="text-xs text-gray-400">Calories</p>
+                  <p className="text-xl font-bold text-orange-400">
+                    {calories}
+                  </p>
+                </div>
+              )}
             </div>
-
             <button
               onClick={exitChallenge}
               className="w-full py-4 bg-teal-600 hover:bg-teal-700 rounded-xl font-bold text-lg text-white"
@@ -768,21 +845,31 @@ function App() {
         </div>
       )}
 
-      {/* XP Bar */}
-      <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
-        <div
-          className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
-          style={{ width: `${progressToNextLevel}%` }}
-        ></div>
-        <p className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white tracking-widest uppercase">
-          {currentRank.title} (Lvl {level}) • {xp} XP
-        </p>
-      </div>
+      {/* XP Bar - Hide in Zen Mode */}
+      {!zenMode && (
+        <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+            style={{ width: `${progressToNextLevel}%` }}
+          ></div>
+          <p className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white tracking-widest uppercase">
+            {currentRank.title} (Lvl {level}) • {xp} XP
+          </p>
+        </div>
+      )}
 
       {/* Main Grid */}
-      <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      <div
+        className={`w-full max-w-7xl grid ${
+          zenMode ? "grid-cols-1 justify-center" : "grid-cols-1 lg:grid-cols-2"
+        } gap-8 items-start`}
+      >
         {/* LEFT COL: Camera */}
-        <div className="flex flex-col gap-4">
+        <div
+          className={`flex flex-col gap-4 ${
+            zenMode ? "max-w-4xl mx-auto w-full" : ""
+          }`}
+        >
           <div
             className={`relative border-4 ${
               gameMode === "challenge"
@@ -805,7 +892,7 @@ function App() {
               style={{ transform: "scaleX(-1)" }}
             />
 
-            {/* HUD */}
+            {/* HUD: Reps & Calories */}
             <div className="absolute top-4 left-4 flex flex-col gap-2">
               <div className="bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 border-teal-500 shadow-lg">
                 <span className="text-gray-400 text-xs uppercase tracking-wider block mb-1">
@@ -815,17 +902,24 @@ function App() {
                   {count}
                 </span>
               </div>
-              <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-xl border-l-4 border-orange-500 shadow-lg flex items-center gap-2">
-                <span className="text-xl">🔥</span>
-                <div>
-                  <span className="text-gray-400 text-[10px] uppercase tracking-wider block">
-                    Burn
-                  </span>
-                  <span className="text-lg font-mono font-bold text-white leading-none">
-                    {calories}
+              {showCalories && (
+                <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-xl border-l-4 border-orange-500 shadow-lg flex flex-col justify-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🔥</span>
+                    <div>
+                      <span className="text-gray-400 text-[10px] uppercase tracking-wider block">
+                        Burn
+                      </span>
+                      <span className="text-lg font-mono font-bold text-white leading-none">
+                        {calories}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-orange-300 font-medium mt-1">
+                    {getFoodEquivalent(calories)}
                   </span>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Challenge Timer Overlay */}
@@ -837,6 +931,24 @@ function App() {
                 <span className="text-4xl font-mono font-black text-white">
                   {timeLeft}
                 </span>
+              </div>
+            )}
+
+            {/* Rest Timer Overlay */}
+            {restTimer > 0 && (
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
+                <h3 className="text-2xl font-bold text-teal-400 mb-2 animate-pulse">
+                  Rest & Recover
+                </h3>
+                <div className="text-8xl font-black text-white mb-6 font-mono">
+                  {restTimer}
+                </div>
+                <button
+                  onClick={() => setRestTimer(0)}
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-full text-white font-bold"
+                >
+                  Skip Rest
+                </button>
               </div>
             )}
 
@@ -864,106 +976,108 @@ function App() {
           )}
         </div>
 
-        {/* RIGHT COL: Analytics */}
-        <div className="grid grid-rows-[auto_1fr] gap-4 h-full">
-          <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl h-80 flex flex-col">
-            <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4">
-              Performance Trend
-            </h3>
-            <div className="flex-1 w-full min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="#374151"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="time"
-                    stroke="#9CA3AF"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    stroke="#9CA3AF"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#1F2937",
-                      border: "1px solid #374151",
-                      borderRadius: "8px",
-                      color: "#fff",
-                    }}
-                    itemStyle={{ color: "#2DD4BF" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="reps"
-                    stroke="#2DD4BF"
-                    strokeWidth={4}
-                    dot={{
-                      fill: "#111827",
-                      stroke: "#2DD4BF",
-                      strokeWidth: 3,
-                      r: 4,
-                    }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl max-h-80 overflow-y-auto custom-scrollbar">
-            <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4 sticky top-0 bg-gray-800 pb-2 border-b border-gray-700">
-              Today's Sessions
-            </h3>
-            {history.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-40 text-gray-600">
-                <p className="text-sm italic">No sets completed yet.</p>
+        {/* RIGHT COL: Analytics - Hide in Zen Mode */}
+        {!zenMode && (
+          <div className="grid grid-rows-[auto_1fr] gap-4 h-full">
+            <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl h-80 flex flex-col">
+              <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4">
+                Performance Trend
+              </h3>
+              <div className="flex-1 w-full min-h-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#374151"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="time"
+                      stroke="#9CA3AF"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#9CA3AF"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#1F2937",
+                        border: "1px solid #374151",
+                        borderRadius: "8px",
+                        color: "#fff",
+                      }}
+                      itemStyle={{ color: "#2DD4BF" }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="reps"
+                      stroke="#2DD4BF"
+                      strokeWidth={4}
+                      dot={{
+                        fill: "#111827",
+                        stroke: "#2DD4BF",
+                        strokeWidth: 3,
+                        r: 4,
+                      }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {history
-                  .slice()
-                  .reverse()
-                  .map((set, index) => (
-                    <div
-                      key={set.id}
-                      className={`flex justify-between items-center bg-gray-700/30 p-4 rounded-xl border border-gray-700/50 hover:bg-gray-700/50 transition-colors ${
-                        set.mode === "challenge"
-                          ? "border-l-4 border-l-red-500"
-                          : ""
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                            set.mode === "challenge"
-                              ? "bg-red-500/20 text-red-400"
-                              : "bg-teal-500/20 text-teal-400"
-                          }`}
-                        >
-                          {set.mode === "challenge"
-                            ? "⚡"
-                            : history.length - index}
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl max-h-80 overflow-y-auto custom-scrollbar">
+              <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4 sticky top-0 bg-gray-800 pb-2 border-b border-gray-700">
+                Today's Sessions
+              </h3>
+              {history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-gray-600">
+                  <p className="text-sm italic">No sets completed yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {history
+                    .slice()
+                    .reverse()
+                    .map((set, index) => (
+                      <div
+                        key={set.id}
+                        className={`flex justify-between items-center bg-gray-700/30 p-4 rounded-xl border border-gray-700/50 hover:bg-gray-700/50 transition-colors ${
+                          set.mode === "challenge"
+                            ? "border-l-4 border-l-red-500"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                              set.mode === "challenge"
+                                ? "bg-red-500/20 text-red-400"
+                                : "bg-teal-500/20 text-teal-400"
+                            }`}
+                          >
+                            {set.mode === "challenge"
+                              ? "⚡"
+                              : history.length - index}
+                          </div>
+                          <span className="font-medium text-white">
+                            {set.reps} Reps
+                          </span>
                         </div>
-                        <span className="font-medium text-white">
-                          {set.reps} Reps
+                        <span className="text-gray-500 text-xs font-mono">
+                          {set.time}
                         </span>
                       </div>
-                      <span className="text-gray-500 text-xs font-mono">
-                        {set.time}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            )}
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
