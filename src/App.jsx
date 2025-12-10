@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -19,23 +19,21 @@ const popSound = new Audio(
 
 // --- MUSCLE MAP COMPONENT ---
 const MuscleMap = ({ muscleData }) => {
-  // Helper to get color intensity based on reps
   const getColor = (reps) => {
-    if (!reps || reps === 0) return "#374151"; // Gray-700 (Inactive)
-    if (reps < 20) return "#2DD4BF"; // Teal (Warmup)
-    if (reps < 50) return "#FACC15"; // Yellow (Burning)
-    return "#EF4444"; // Red (On Fire)
+    if (!reps || reps === 0) return "#374151";
+    if (reps < 20) return "#2DD4BF";
+    if (reps < 50) return "#FACC15";
+    return "#EF4444";
   };
 
   const getOpacity = (reps) => {
     if (!reps) return 0.3;
-    return Math.min(0.5 + reps / 100, 1); // Cap at 1
+    return Math.min(0.5 + reps / 100, 1);
   };
 
   return (
     <div className="relative w-full h-64 flex items-center justify-center">
       <svg viewBox="0 0 200 400" className="h-full drop-shadow-2xl">
-        {/* HEAD */}
         <circle
           cx="100"
           cy="50"
@@ -44,8 +42,6 @@ const MuscleMap = ({ muscleData }) => {
           stroke="#4B5563"
           strokeWidth="2"
         />
-
-        {/* TORSO (Core) */}
         <path
           d="M75,80 L125,80 L115,200 L85,200 Z"
           fill={getColor(muscleData.core)}
@@ -53,9 +49,6 @@ const MuscleMap = ({ muscleData }) => {
           stroke="white"
           strokeWidth="2"
         />
-
-        {/* ARMS (Biceps/Shoulders) */}
-        {/* Left Arm */}
         <path
           d="M75,85 L50,150 L65,160 L80,100 Z"
           fill={getColor(muscleData.arms)}
@@ -63,7 +56,6 @@ const MuscleMap = ({ muscleData }) => {
           stroke="white"
           strokeWidth="2"
         />
-        {/* Right Arm */}
         <path
           d="M125,85 L150,150 L135,160 L120,100 Z"
           fill={getColor(muscleData.arms)}
@@ -71,9 +63,6 @@ const MuscleMap = ({ muscleData }) => {
           stroke="white"
           strokeWidth="2"
         />
-
-        {/* LEGS (Quads) */}
-        {/* Left Leg */}
         <path
           d="M85,200 L70,300 L90,300 L100,200 Z"
           fill={getColor(muscleData.legs)}
@@ -81,7 +70,6 @@ const MuscleMap = ({ muscleData }) => {
           stroke="white"
           strokeWidth="2"
         />
-        {/* Right Leg */}
         <path
           d="M115,200 L130,300 L110,300 L100,200 Z"
           fill={getColor(muscleData.legs)}
@@ -90,8 +78,6 @@ const MuscleMap = ({ muscleData }) => {
           strokeWidth="2"
         />
       </svg>
-
-      {/* Legend Overlay */}
       <div className="absolute bottom-0 right-0 text-[10px] text-gray-500 flex flex-col gap-1">
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full bg-teal-400"></div> Warm
@@ -111,7 +97,6 @@ function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // State
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -134,9 +119,7 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
-  // Muscle Data State
   const [muscleData, setMuscleData] = useState({ arms: 0, legs: 0, core: 0 });
-
   const [timeLeft, setTimeLeft] = useState(60);
   const [restTimer, setRestTimer] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
@@ -155,6 +138,40 @@ function App() {
   const progressToNextLevel = xp % 100;
   const DAILY_GOAL = 50;
   const dailyProgress = Math.min((dailyTotal / DAILY_GOAL) * 100, 100);
+
+  // --- THEME ENGINE ---
+  const getRank = (xp) => {
+    if (xp < 100)
+      return {
+        title: "ROOKIE",
+        color: "#2DD4BF",
+        shadow: "shadow-teal-500/50",
+        border: "border-teal-500",
+        text: "text-teal-400",
+        gradient: "from-teal-400 to-blue-500",
+      };
+    if (xp < 500)
+      return {
+        title: "ATHLETE",
+        color: "#FACC15",
+        shadow: "shadow-yellow-500/50",
+        border: "border-yellow-500",
+        text: "text-yellow-400",
+        gradient: "from-yellow-400 to-orange-500",
+      };
+    return {
+      title: "SPARTAN",
+      color: "#D946EF",
+      shadow: "shadow-fuchsia-500/50",
+      border: "border-fuchsia-500",
+      text: "text-fuchsia-400",
+      gradient: "from-fuchsia-500 to-purple-600",
+    };
+  };
+
+  // FIX: Define currentRank AND theme
+  const currentRank = getRank(xp);
+  const theme = currentRank;
 
   const BASE_EXERCISES = {
     left_curl: {
@@ -192,13 +209,6 @@ function App() {
     normal: { active: 0, rest: 0 },
     hard: { active: -20, rest: 10 },
   };
-
-  const getRank = (xp) => {
-    if (xp < 100) return { title: "ROOKIE", color: "#2DD4BF" };
-    if (xp < 500) return { title: "ATHLETE", color: "#FACC15" };
-    return { title: "SPARTAN", color: "#D946EF" };
-  };
-  const currentRank = getRank(xp);
 
   const getFoodEquivalent = (kcal) => {
     if (kcal < 15) return "Burning up...";
@@ -255,7 +265,6 @@ function App() {
     weightRef.current = weight;
   }, [exercise, difficulty, isMuted, gameMode, weight]);
 
-  // Load Saved Data
   useEffect(() => {
     setCount(0);
     countRef.current = 0;
@@ -274,7 +283,6 @@ function App() {
     const savedShowCal = localStorage.getItem("show_calories");
     if (savedShowCal !== null) setShowCalories(savedShowCal === "true");
 
-    // Daily & Muscle Totals
     const storedDate = localStorage.getItem("lastWorkoutDate");
     const today = new Date().toDateString();
 
@@ -287,11 +295,10 @@ function App() {
       });
     } else {
       setDailyTotal(0);
-      setMuscleData({ arms: 0, legs: 0, core: 0 }); // Reset muscles on new day
+      setMuscleData({ arms: 0, legs: 0, core: 0 });
     }
   }, [exercise]);
 
-  // Challenge Timer
   useEffect(() => {
     let interval = null;
     if (gameMode === "challenge" && timeLeft > 0 && !isGameOver) {
@@ -304,7 +311,6 @@ function App() {
     return () => clearInterval(interval);
   }, [gameMode, timeLeft, isGameOver]);
 
-  // Rest Timer
   useEffect(() => {
     let interval = null;
     if (restTimer > 0) {
@@ -519,7 +525,6 @@ function App() {
     const newCount = countRef.current;
     setCount(newCount);
 
-    // BIOMETRIC CALORIES
     const weightFactor = weightRef.current / 70;
     const calEarned = config.calPerRep * weightFactor;
 
@@ -586,7 +591,6 @@ function App() {
     const today = new Date().toDateString();
     const lastDate = localStorage.getItem("lastWorkoutDate");
 
-    // Update Daily Total
     let newDaily = dailyTotal + countRef.current;
     if (lastDate !== today) newDaily = countRef.current;
     setDailyTotal(newDaily);
@@ -594,14 +598,13 @@ function App() {
 
     // Update Muscle Data
     const exConfig = BASE_EXERCISES[exerciseRef.current];
-    const muscleGroup = exConfig.muscle; // arms, legs, or core
+    const muscleGroup = exConfig.muscle;
     const currentMuscleVal = muscleData[muscleGroup];
     const newMuscleVal = currentMuscleVal + countRef.current;
 
     setMuscleData((prev) => ({ ...prev, [muscleGroup]: newMuscleVal }));
     localStorage.setItem(`muscle_${muscleGroup}`, newMuscleVal);
 
-    // Update Streak
     if (lastDate !== today) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -683,7 +686,9 @@ function App() {
           <div className="mb-8 inline-block p-4 rounded-full bg-gray-800/50 backdrop-blur border border-gray-700">
             <span className="text-2xl">🤖</span>
           </div>
-          <h1 className="text-6xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-blue-600 animate-gradient">
+          <h1
+            className={`text-6xl font-extrabold mb-6 bg-clip-text text-transparent bg-gradient-to-r ${theme.gradient} animate-gradient`}
+          >
             AI Fitness Trainer
           </h1>
           <p className="text-gray-300 text-xl mb-12 leading-relaxed">
@@ -698,7 +703,7 @@ function App() {
                 toggleFullScreen();
                 setAppState("active");
               }}
-              className="px-8 py-4 bg-gradient-to-r from-teal-500 to-blue-600 rounded-xl font-bold text-lg shadow-lg hover:shadow-teal-500/50 transition-all transform hover:scale-105"
+              className={`px-8 py-4 bg-gradient-to-r ${theme.gradient} rounded-xl font-bold text-lg shadow-lg hover:${theme.shadow} transition-all transform hover:scale-105`}
             >
               Start Workout
             </button>
@@ -720,7 +725,7 @@ function App() {
               >
                 ✕
               </button>
-              <h2 className="text-2xl font-bold mb-4 text-teal-400">
+              <h2 className={`text-2xl font-bold mb-4 ${theme.text}`}>
                 How to use
               </h2>
               <ul className="space-y-3 text-gray-300">
@@ -728,7 +733,7 @@ function App() {
                 <li>2. Choose an exercise (e.g., Left Curl).</li>
                 <li>
                   3. Stand back until the{" "}
-                  <span className="text-teal-400 font-bold">Skeleton</span>{" "}
+                  <span className={`${theme.text} font-bold`}>Skeleton</span>{" "}
                   appears.
                 </li>
                 <li>4. Complete full reps to earn XP!</li>
@@ -763,7 +768,7 @@ function App() {
             onClick={() => setZenMode(!zenMode)}
             className={`p-2 rounded-lg text-sm border ${
               zenMode
-                ? "bg-purple-500/20 border-purple-500 text-purple-400"
+                ? `bg-gray-800 ${theme.border} ${theme.text}`
                 : "bg-gray-800 border-gray-700 text-gray-400"
             }`}
           >
@@ -813,7 +818,7 @@ function App() {
                     cx="20"
                     cy="20"
                     r="16"
-                    stroke={currentRank.color}
+                    stroke={theme.color}
                     strokeWidth="4"
                     fill="transparent"
                     strokeDasharray="100"
@@ -870,7 +875,7 @@ function App() {
       {/* Settings Modal */}
       {showSettings && (
         <div className="absolute top-20 left-4 z-50 bg-gray-900 border border-gray-700 p-6 rounded-xl shadow-2xl w-64">
-          <h3 className="font-bold text-teal-400 mb-4">Settings</h3>
+          <h3 className={`font-bold ${theme.text} mb-4`}>Settings</h3>
           <div className="mb-4">
             <label className="text-xs text-gray-400 uppercase block mb-2">
               Difficulty
@@ -882,7 +887,7 @@ function App() {
                   onClick={() => setDifficulty(level)}
                   className={`px-3 py-2 rounded text-sm capitalize border ${
                     difficulty === level
-                      ? "bg-teal-500/20 border-teal-500 text-teal-400"
+                      ? `bg-gray-800 ${theme.border} ${theme.text}`
                       : "bg-gray-800 border-gray-600 text-gray-300"
                   }`}
                 >
@@ -928,8 +933,12 @@ function App() {
       {/* GAME OVER MODAL */}
       {isGameOver && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-          <div className="bg-gray-900 border border-teal-500 p-10 rounded-3xl max-w-lg w-full text-center shadow-2xl transform scale-110">
-            <h2 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-blue-500 mb-2">
+          <div
+            className={`bg-gray-900 border ${theme.border} p-10 rounded-3xl max-w-lg w-full text-center shadow-2xl transform scale-110`}
+          >
+            <h2
+              className={`text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r ${theme.gradient} mb-2`}
+            >
               TIME'S UP!
             </h2>
             <p className="text-gray-400 mb-8">Challenge Complete</p>
@@ -954,7 +963,7 @@ function App() {
             </div>
             <button
               onClick={exitChallenge}
-              className="w-full py-4 bg-teal-600 hover:bg-teal-700 rounded-xl font-bold text-lg text-white"
+              className={`w-full py-4 bg-gradient-to-r ${theme.gradient} rounded-xl font-bold text-lg text-white`}
             >
               Close & Save
             </button>
@@ -966,7 +975,7 @@ function App() {
       {!zenMode && (
         <div className="w-full max-w-7xl bg-gray-800 rounded-full h-4 mb-8 relative overflow-hidden border border-gray-700">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
+            className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-500`}
             style={{ width: `${progressToNextLevel}%` }}
           ></div>
           <p className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white tracking-widest uppercase">
@@ -1011,7 +1020,9 @@ function App() {
 
             {/* HUD: Reps & Calories */}
             <div className="absolute top-4 left-4 flex flex-col gap-2">
-              <div className="bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 border-teal-500 shadow-lg">
+              <div
+                className={`bg-black/60 backdrop-blur px-4 py-3 rounded-xl border-l-4 ${theme.border} shadow-lg`}
+              >
                 <span className="text-gray-400 text-xs uppercase tracking-wider block mb-1">
                   Reps
                 </span>
@@ -1054,7 +1065,9 @@ function App() {
             {/* Rest Timer Overlay */}
             {restTimer > 0 && (
               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-                <h3 className="text-2xl font-bold text-teal-400 mb-2 animate-pulse">
+                <h3
+                  className={`text-2xl font-bold ${theme.text} mb-2 animate-pulse`}
+                >
                   Rest & Recover
                 </h3>
                 <div className="text-8xl font-black text-white mb-6 font-mono">
@@ -1086,7 +1099,7 @@ function App() {
           {gameMode !== "challenge" && (
             <button
               onClick={finishSet}
-              className="w-full bg-gradient-to-r from-blue-600 to-teal-500 hover:from-blue-700 hover:to-teal-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 text-lg tracking-wide uppercase"
+              className={`w-full bg-gradient-to-r ${theme.gradient} hover:opacity-90 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 text-lg tracking-wide uppercase`}
             >
               Finish Set & Save Progress
             </button>
@@ -1110,7 +1123,27 @@ function App() {
               </h3>
               <div className="flex-1 w-full min-h-0">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient
+                        id="colorReps"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={theme.color}
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={theme.color}
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid
                       strokeDasharray="3 3"
                       stroke="#374151"
@@ -1136,21 +1169,16 @@ function App() {
                         borderRadius: "8px",
                         color: "#fff",
                       }}
-                      itemStyle={{ color: "#2DD4BF" }}
+                      itemStyle={{ color: theme.color }}
                     />
-                    <Line
+                    <Area
                       type="monotone"
                       dataKey="reps"
-                      stroke="#2DD4BF"
-                      strokeWidth={4}
-                      dot={{
-                        fill: "#111827",
-                        stroke: "#2DD4BF",
-                        strokeWidth: 3,
-                        r: 4,
-                      }}
+                      stroke={theme.color}
+                      fillOpacity={1}
+                      fill="url(#colorReps)"
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </div>
@@ -1182,7 +1210,7 @@ function App() {
                             className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
                               set.mode === "challenge"
                                 ? "bg-red-500/20 text-red-400"
-                                : "bg-teal-500/20 text-teal-400"
+                                : `bg-gray-800 ${theme.text}`
                             }`}
                           >
                             {set.mode === "challenge"
