@@ -16,10 +16,102 @@ import "@tensorflow/tfjs-backend-webgl";
 const popSound = new Audio(
   "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
 );
-// const popSound = new Audio('/pop.mp3'); // Uncomment for local file
+
+// --- MUSCLE MAP COMPONENT ---
+const MuscleMap = ({ muscleData }) => {
+  // Helper to get color intensity based on reps
+  const getColor = (reps) => {
+    if (!reps || reps === 0) return "#374151"; // Gray-700 (Inactive)
+    if (reps < 20) return "#2DD4BF"; // Teal (Warmup)
+    if (reps < 50) return "#FACC15"; // Yellow (Burning)
+    return "#EF4444"; // Red (On Fire)
+  };
+
+  const getOpacity = (reps) => {
+    if (!reps) return 0.3;
+    return Math.min(0.5 + reps / 100, 1); // Cap at 1
+  };
+
+  return (
+    <div className="relative w-full h-64 flex items-center justify-center">
+      <svg viewBox="0 0 200 400" className="h-full drop-shadow-2xl">
+        {/* HEAD */}
+        <circle
+          cx="100"
+          cy="50"
+          r="25"
+          fill="#1F2937"
+          stroke="#4B5563"
+          strokeWidth="2"
+        />
+
+        {/* TORSO (Core) */}
+        <path
+          d="M75,80 L125,80 L115,200 L85,200 Z"
+          fill={getColor(muscleData.core)}
+          fillOpacity={getOpacity(muscleData.core)}
+          stroke="white"
+          strokeWidth="2"
+        />
+
+        {/* ARMS (Biceps/Shoulders) */}
+        {/* Left Arm */}
+        <path
+          d="M75,85 L50,150 L65,160 L80,100 Z"
+          fill={getColor(muscleData.arms)}
+          fillOpacity={getOpacity(muscleData.arms)}
+          stroke="white"
+          strokeWidth="2"
+        />
+        {/* Right Arm */}
+        <path
+          d="M125,85 L150,150 L135,160 L120,100 Z"
+          fill={getColor(muscleData.arms)}
+          fillOpacity={getOpacity(muscleData.arms)}
+          stroke="white"
+          strokeWidth="2"
+        />
+
+        {/* LEGS (Quads) */}
+        {/* Left Leg */}
+        <path
+          d="M85,200 L70,300 L90,300 L100,200 Z"
+          fill={getColor(muscleData.legs)}
+          fillOpacity={getOpacity(muscleData.legs)}
+          stroke="white"
+          strokeWidth="2"
+        />
+        {/* Right Leg */}
+        <path
+          d="M115,200 L130,300 L110,300 L100,200 Z"
+          fill={getColor(muscleData.legs)}
+          fillOpacity={getOpacity(muscleData.legs)}
+          stroke="white"
+          strokeWidth="2"
+        />
+      </svg>
+
+      {/* Legend Overlay */}
+      <div className="absolute bottom-0 right-0 text-[10px] text-gray-500 flex flex-col gap-1">
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-full bg-teal-400"></div> Warm
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-full bg-yellow-400"></div> Burn
+        </div>
+        <div className="flex items-center gap-1">
+          <div className="w-2 h-2 rounded-full bg-red-500"></div> Fire
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function App() {
-  // --- APP STATE ---
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  // State
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -27,9 +119,8 @@ function App() {
   const [difficulty, setDifficulty] = useState("normal");
   const [gameMode, setGameMode] = useState("standard");
   const [showCalories, setShowCalories] = useState(true);
-  const [zenMode, setZenMode] = useState(false); // New: Zen Mode Toggle
+  const [zenMode, setZenMode] = useState(false);
 
-  // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
   const [calories, setCalories] = useState(0);
   const [history, setHistory] = useState([]);
@@ -43,14 +134,13 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
-  // Timers
-  const [timeLeft, setTimeLeft] = useState(60); // For Challenge
-  const [restTimer, setRestTimer] = useState(0); // For Rest Timer
+  // Muscle Data State
+  const [muscleData, setMuscleData] = useState({ arms: 0, legs: 0, core: 0 });
+
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [restTimer, setRestTimer] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
 
-  // Refs
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const detectorRef = useRef(null);
   const countRef = useRef(0);
   const curlStateRef = useRef("rest");
@@ -61,7 +151,6 @@ function App() {
   const gameModeRef = useRef("standard");
   const weightRef = useRef(70);
 
-  // Computed Level
   const level = Math.floor(xp / 100) + 1;
   const progressToNextLevel = xp % 100;
   const DAILY_GOAL = 50;
@@ -73,24 +162,28 @@ function App() {
       joints: ["left_shoulder", "left_elbow", "left_wrist"],
       type: "curl",
       calPerRep: 0.4,
+      muscle: "arms",
     },
     right_curl: {
       name: "Right Bicep Curl",
       joints: ["right_shoulder", "right_elbow", "right_wrist"],
       type: "curl",
       calPerRep: 0.4,
+      muscle: "arms",
     },
     squat: {
       name: "Squat",
       joints: ["left_hip", "left_knee", "left_ankle"],
       type: "squat",
       calPerRep: 1.2,
+      muscle: "legs",
     },
     jumping_jack: {
       name: "Jumping Jacks",
       joints: ["right_hip", "right_shoulder", "right_elbow"],
       type: "jack",
       calPerRep: 1.5,
+      muscle: "core",
     },
   };
 
@@ -162,6 +255,42 @@ function App() {
     weightRef.current = weight;
   }, [exercise, difficulty, isMuted, gameMode, weight]);
 
+  // Load Saved Data
+  useEffect(() => {
+    setCount(0);
+    countRef.current = 0;
+    curlStateRef.current = "rest";
+    hasBrokenRecord.current = false;
+    setFeedback("Go!");
+
+    setBest(parseInt(localStorage.getItem(`best_${exercise}`) || 0));
+    setHistory(JSON.parse(localStorage.getItem(`history_${exercise}`)) || []);
+    setXp(parseInt(localStorage.getItem("total_xp") || 0));
+    setStreak(parseInt(localStorage.getItem("streak") || 0));
+
+    const savedWeight = localStorage.getItem("user_weight");
+    if (savedWeight) setWeight(parseInt(savedWeight));
+
+    const savedShowCal = localStorage.getItem("show_calories");
+    if (savedShowCal !== null) setShowCalories(savedShowCal === "true");
+
+    // Daily & Muscle Totals
+    const storedDate = localStorage.getItem("lastWorkoutDate");
+    const today = new Date().toDateString();
+
+    if (storedDate === today) {
+      setDailyTotal(parseInt(localStorage.getItem("dailyTotal") || 0));
+      setMuscleData({
+        arms: parseInt(localStorage.getItem("muscle_arms") || 0),
+        legs: parseInt(localStorage.getItem("muscle_legs") || 0),
+        core: parseInt(localStorage.getItem("muscle_core") || 0),
+      });
+    } else {
+      setDailyTotal(0);
+      setMuscleData({ arms: 0, legs: 0, core: 0 }); // Reset muscles on new day
+    }
+  }, [exercise]);
+
   // Challenge Timer
   useEffect(() => {
     let interval = null;
@@ -183,11 +312,22 @@ function App() {
         setRestTimer((prev) => prev - 1);
       }, 1000);
     } else if (restTimer === 0 && interval) {
-      // Optional: Play sound when rest ends
       if (!isMuted) speak("Rest complete. Let's go.");
     }
     return () => clearInterval(interval);
   }, [restTimer]);
+
+  const handleWeightChange = (e) => {
+    const w = parseInt(e.target.value);
+    setWeight(w);
+    localStorage.setItem("user_weight", w);
+  };
+
+  const toggleCalories = () => {
+    const newVal = !showCalories;
+    setShowCalories(newVal);
+    localStorage.setItem("show_calories", newVal);
+  };
 
   const startChallenge = () => {
     setGameMode("challenge");
@@ -210,46 +350,6 @@ function App() {
     setTimeLeft(60);
     setCount(0);
     countRef.current = 0;
-  };
-
-  // Update exercise & Load saved data
-  useEffect(() => {
-    setCount(0);
-    countRef.current = 0;
-    curlStateRef.current = "rest";
-    hasBrokenRecord.current = false;
-    setFeedback("Go!");
-
-    setBest(parseInt(localStorage.getItem(`best_${exercise}`) || 0));
-    setHistory(JSON.parse(localStorage.getItem(`history_${exercise}`)) || []);
-    setXp(parseInt(localStorage.getItem("total_xp") || 0));
-    setStreak(parseInt(localStorage.getItem("streak") || 0));
-
-    const savedWeight = localStorage.getItem("user_weight");
-    if (savedWeight) setWeight(parseInt(savedWeight));
-
-    const savedShowCal = localStorage.getItem("show_calories");
-    if (savedShowCal !== null) setShowCalories(savedShowCal === "true");
-
-    const storedDate = localStorage.getItem("lastWorkoutDate");
-    const today = new Date().toDateString();
-    if (storedDate === today) {
-      setDailyTotal(parseInt(localStorage.getItem("dailyTotal") || 0));
-    } else {
-      setDailyTotal(0);
-    }
-  }, [exercise]);
-
-  const handleWeightChange = (e) => {
-    const w = parseInt(e.target.value);
-    setWeight(w);
-    localStorage.setItem("user_weight", w);
-  };
-
-  const toggleCalories = () => {
-    const newVal = !showCalories;
-    setShowCalories(newVal);
-    localStorage.setItem("show_calories", newVal);
   };
 
   function speak(text) {
@@ -419,6 +519,7 @@ function App() {
     const newCount = countRef.current;
     setCount(newCount);
 
+    // BIOMETRIC CALORIES
     const weightFactor = weightRef.current / 70;
     const calEarned = config.calPerRep * weightFactor;
 
@@ -427,6 +528,11 @@ function App() {
     setXp((prev) => {
       const newXp = prev + 10;
       localStorage.setItem("total_xp", newXp);
+      const oldLevel = Math.floor(prev / 100) + 1;
+      const newLevel = Math.floor(newXp / 100) + 1;
+      if (newLevel > oldLevel) {
+        speak("Level Up!");
+      }
       return newXp;
     });
 
@@ -480,11 +586,22 @@ function App() {
     const today = new Date().toDateString();
     const lastDate = localStorage.getItem("lastWorkoutDate");
 
+    // Update Daily Total
     let newDaily = dailyTotal + countRef.current;
     if (lastDate !== today) newDaily = countRef.current;
     setDailyTotal(newDaily);
     localStorage.setItem("dailyTotal", newDaily);
 
+    // Update Muscle Data
+    const exConfig = BASE_EXERCISES[exerciseRef.current];
+    const muscleGroup = exConfig.muscle; // arms, legs, or core
+    const currentMuscleVal = muscleData[muscleGroup];
+    const newMuscleVal = currentMuscleVal + countRef.current;
+
+    setMuscleData((prev) => ({ ...prev, [muscleGroup]: newMuscleVal }));
+    localStorage.setItem(`muscle_${muscleGroup}`, newMuscleVal);
+
+    // Update Streak
     if (lastDate !== today) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -496,7 +613,7 @@ function App() {
     localStorage.setItem("lastWorkoutDate", today);
 
     if (gameModeRef.current === "standard") {
-      setRestTimer(45); // Start 45s Rest Timer
+      setRestTimer(45);
       countRef.current = 0;
       setCount(0);
       hasBrokenRecord.current = false;
@@ -979,6 +1096,14 @@ function App() {
         {/* RIGHT COL: Analytics - Hide in Zen Mode */}
         {!zenMode && (
           <div className="grid grid-rows-[auto_1fr] gap-4 h-full">
+            {/* MUSCLE MAP - NEW WIDGET */}
+            <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl flex flex-col items-center">
+              <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4 self-start">
+                Muscle Activity (Today)
+              </h3>
+              <MuscleMap muscleData={muscleData} />
+            </div>
+
             <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl h-80 flex flex-col">
               <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4">
                 Performance Trend
