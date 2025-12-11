@@ -17,7 +17,8 @@ const popSound = new Audio(
   "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
 );
 
-// --- MUSCLE MAP COMPONENT ---
+// --- COMPONENTS ---
+
 const MuscleMap = ({ muscleData }) => {
   const getColor = (reps) => {
     if (!reps || reps === 0) return "#374151";
@@ -78,26 +79,68 @@ const MuscleMap = ({ muscleData }) => {
           strokeWidth="2"
         />
       </svg>
-      <div className="absolute bottom-0 right-0 text-[10px] text-gray-500 flex flex-col gap-1">
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-teal-400"></div> Warm
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-yellow-400"></div> Burn
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-red-500"></div> Fire
-        </div>
+    </div>
+  );
+};
+
+const WorkoutsCalendar = ({ triggerUpdate }) => {
+  const [activityLog, setActivityLog] = useState({});
+
+  useEffect(() => {
+    const log = JSON.parse(localStorage.getItem("activity_log")) || {};
+    setActivityLog(log);
+  }, [triggerUpdate]);
+
+  // Generate last 7 days
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+
+  return (
+    <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 mb-4">
+      <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-3">
+        Weekly Streak
+      </h3>
+      <div className="flex justify-between">
+        {days.map((d, i) => {
+          const dateKey = d.toDateString();
+          const isActive = activityLog[dateKey];
+          const isToday = new Date().toDateString() === dateKey;
+
+          return (
+            <div key={i} className="flex flex-col items-center gap-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-all
+                  ${
+                    isActive
+                      ? "bg-teal-500 border-teal-500 text-black"
+                      : "border-gray-700 text-gray-500 bg-gray-800"
+                  }
+                  ${
+                    isToday && !isActive
+                      ? "border-teal-500/50 animate-pulse"
+                      : ""
+                  }
+               `}
+              >
+                {isActive ? "✓" : d.getDate()}
+              </div>
+              <span className="text-[10px] text-gray-400">
+                {d.toLocaleDateString("en-US", { weekday: "narrow" })}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 };
 
 function App() {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-
-  // State
+  // --- APP STATE ---
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -107,7 +150,9 @@ function App() {
   const [showCalories, setShowCalories] = useState(true);
   const [zenMode, setZenMode] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(false);
+  const [showDailyChallenge, setShowDailyChallenge] = useState(true);
 
+  // --- WORKOUT STATE ---
   const [count, setCount] = useState(0);
   const [calories, setCalories] = useState(0);
   const [history, setHistory] = useState([]);
@@ -121,10 +166,6 @@ function App() {
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
-  // Tempo State
-  const [lastRepTime, setLastRepTime] = useState(0);
-  const [tempoStatus, setTempoStatus] = useState("good"); // 'good', 'fast', 'slow'
-
   const [muscleData, setMuscleData] = useState({ arms: 0, legs: 0, core: 0 });
   const [timeLeft, setTimeLeft] = useState(60);
   const [restTimer, setRestTimer] = useState(0);
@@ -132,6 +173,24 @@ function App() {
   const [showReportCard, setShowReportCard] = useState(false);
   const [reportData, setReportData] = useState({ reps: 0, xp: 0, cals: 0 });
 
+  // Triggers calendar re-render
+  const [calendarUpdate, setCalendarUpdate] = useState(0);
+
+  // --- DAILY CHALLENGE STATE ---
+  const [isDailyChallengeActive, setIsDailyChallengeActive] = useState(false);
+  const [challengeStep, setChallengeStep] = useState(0);
+
+  const DAILY_ROUTINE = [
+    { exercise: "jumping_jack", reps: 20, name: "20 Jumping Jacks" },
+    { exercise: "squat", reps: 10, name: "10 Squats" },
+    { exercise: "left_curl", reps: 10, name: "10 Left Curls" },
+    { exercise: "right_curl", reps: 10, name: "10 Right Curls" },
+  ];
+
+  // --- REFS ---
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const startedRef = useRef(false);
   const detectorRef = useRef(null);
   const countRef = useRef(0);
   const curlStateRef = useRef("rest");
@@ -143,7 +202,7 @@ function App() {
   const weightRef = useRef(70);
   const showReportCardRef = useRef(false);
   const privacyModeRef = useRef(false);
-  const lastRepTimestampRef = useRef(Date.now()); // For tempo calculation
+  const lastRepTimestampRef = useRef(Date.now());
 
   const level = Math.floor(xp / 100) + 1;
   const progressToNextLevel = xp % 100;
@@ -308,6 +367,10 @@ function App() {
     const savedShowCal = localStorage.getItem("show_calories");
     if (savedShowCal !== null) setShowCalories(savedShowCal === "true");
 
+    const savedShowDaily = localStorage.getItem("show_daily_challenge");
+    if (savedShowDaily !== null)
+      setShowDailyChallenge(savedShowDaily === "true");
+
     const storedDate = localStorage.getItem("lastWorkoutDate");
     const today = new Date().toDateString();
 
@@ -343,7 +406,12 @@ function App() {
         setRestTimer((prev) => prev - 1);
       }, 1000);
     } else if (restTimer === 0 && interval) {
-      if (!isMuted) speak("Rest complete. Let's go.");
+      if (!isMuted)
+        speak(
+          isDailyChallengeActive
+            ? "Next exercise ready."
+            : "Rest complete. Let's go."
+        );
     }
     return () => clearInterval(interval);
   }, [restTimer]);
@@ -358,6 +426,22 @@ function App() {
     const newVal = !showCalories;
     setShowCalories(newVal);
     localStorage.setItem("show_calories", newVal);
+  };
+
+  const toggleDailyChallenge = () => {
+    const newVal = !showDailyChallenge;
+    setShowDailyChallenge(newVal);
+    localStorage.setItem("show_daily_challenge", newVal);
+  };
+
+  const startDailyChallenge = () => {
+    setIsDailyChallengeActive(true);
+    setChallengeStep(0);
+    setExercise(DAILY_ROUTINE[0].exercise);
+
+    toggleFullScreen();
+    setAppState("active");
+    speak(`Starting Daily Challenge. First up: ${DAILY_ROUTINE[0].name}`);
   };
 
   const startChallenge = () => {
@@ -556,7 +640,6 @@ function App() {
   }
 
   function completeRep(config) {
-    // --- TEMPO METER LOGIC ---
     const now = Date.now();
     const duration = (now - lastRepTimestampRef.current) / 1000;
     lastRepTimestampRef.current = now;
@@ -565,29 +648,26 @@ function App() {
     let tempoMsg = "";
 
     if (config.isCardio) {
-      // Cardio: Faster is better
       if (duration < 1.0) {
-        tempoStatus = "fast"; // Good for cardio
+        tempoStatus = "fast";
         tempoMsg = "🔥 Great Speed!";
       } else if (duration > 2.0) {
-        tempoStatus = "slow"; // Bad for cardio
+        tempoStatus = "slow";
         tempoMsg = "Push Harder!";
       } else {
         tempoMsg = "Good Pace";
       }
     } else {
-      // Strength: Controlled is better
       if (duration < 1.5) {
-        tempoStatus = "fast"; // Bad for strength
+        tempoStatus = "fast";
         tempoMsg = "⚠️ Too Fast!";
       } else {
         tempoMsg = "Good Control";
       }
     }
 
-    // Update Tempo UI
-    setLastRepTime(duration.toFixed(1));
-    setTempoStatus(tempoStatus);
+    // setLastRepTime(duration.toFixed(1)); // Removed unused state
+    // setTempoStatus(tempoStatus); // Removed unused state
 
     countRef.current += 1;
     const newCount = countRef.current;
@@ -614,9 +694,8 @@ function App() {
       localStorage.getItem(`best_${currentExercise}`) || 0
     );
 
-    // Announce logic
     let speechText = newCount.toString();
-    let feedbackText = tempoMsg; // Show tempo feedback by default
+    let feedbackText = tempoMsg;
 
     if (gameModeRef.current !== "challenge" && newCount > currentBest) {
       setBest(newCount);
@@ -628,7 +707,6 @@ function App() {
       }
     }
 
-    // Prioritize tempo warning voice for Strength
     if (!config.isCardio && tempoStatus === "fast") {
       speechText = "Slow Down";
       feedbackText = "⚠️ Too Fast!";
@@ -648,7 +726,7 @@ function App() {
   }
 
   function finishSet() {
-    if (countRef.current === 0) return;
+    if (countRef.current === 0 && !isDailyChallengeActive) return;
 
     const reps = countRef.current;
     const exName = BASE_EXERCISES[exerciseRef.current].name;
@@ -688,6 +766,11 @@ function App() {
     setMuscleData((prev) => ({ ...prev, [muscleGroup]: newMuscleVal }));
     localStorage.setItem(`muscle_${muscleGroup}`, newMuscleVal);
 
+    // --- ACTIVITY LOG (FOR CALENDAR) ---
+    const activityLog = JSON.parse(localStorage.getItem("activity_log")) || {};
+    activityLog[today] = true;
+    localStorage.setItem("activity_log", JSON.stringify(activityLog));
+
     if (lastDate !== today) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -698,7 +781,44 @@ function App() {
     }
     localStorage.setItem("lastWorkoutDate", today);
 
-    setReportData({ reps, xp: xpEarned, cals: calsBurned, exercise: exName });
+    // DAILY CHALLENGE LOGIC
+    if (isDailyChallengeActive) {
+      const nextStep = challengeStep + 1;
+      if (nextStep < DAILY_ROUTINE.length) {
+        setReportData({
+          reps,
+          xp: xpEarned,
+          cals: calsBurned,
+          exercise: exName,
+          nextUp: DAILY_ROUTINE[nextStep].name,
+        });
+        setChallengeStep(nextStep);
+
+        // Switch Exercise Context
+        const nextEx = DAILY_ROUTINE[nextStep].exercise;
+        setExercise(nextEx);
+        exerciseRef.current = nextEx; // Immediate update for loop
+      } else {
+        // Challenge Complete
+        setReportData({
+          reps,
+          xp: xpEarned + 500,
+          cals: calsBurned,
+          exercise: "Daily Challenge Complete!",
+          isFinal: true,
+        });
+        setIsDailyChallengeActive(false);
+        setXp((prev) => {
+          const bonus = prev + 500;
+          localStorage.setItem("total_xp", bonus);
+          return bonus;
+        });
+        speak("Challenge Complete! You are a legend.");
+      }
+    } else {
+      setReportData({ reps, xp: xpEarned, cals: calsBurned, exercise: exName });
+    }
+
     setShowReportCard(true);
 
     if (gameModeRef.current === "standard") {
@@ -712,6 +832,9 @@ function App() {
   const closeReportCard = () => {
     setShowReportCard(false);
     setRestTimer(45);
+    // Reset count visual
+    setCount(0);
+    countRef.current = 0;
   };
 
   function drawFaceMask(ctx, pose) {
@@ -816,6 +939,14 @@ function App() {
             >
               Start Workout
             </button>
+            {showDailyChallenge && (
+              <button
+                onClick={startDailyChallenge}
+                className="px-8 py-4 bg-yellow-500/20 text-yellow-400 border border-yellow-500 rounded-xl font-bold text-lg shadow-lg hover:bg-yellow-500/30 transition-all transform hover:scale-105"
+              >
+                Daily Challenge 🏆
+              </button>
+            )}
             <button
               onClick={() => setShowInstructions(true)}
               className="px-8 py-4 bg-gray-800 rounded-xl font-bold text-lg border border-gray-700 hover:bg-gray-700 transition-all"
@@ -894,18 +1025,21 @@ function App() {
             {zenMode ? "🧘 Active" : "🧘 Zen"}
           </button>
 
-          <button
-            onClick={gameMode === "standard" ? startChallenge : exitChallenge}
-            className={`p-2 rounded-lg text-sm border font-bold ${
-              gameMode === "challenge"
-                ? "bg-red-500/20 border-red-500 text-red-400"
-                : "bg-gray-800 border-gray-700 text-teal-400 hover:text-white"
-            }`}
-          >
-            {gameMode === "challenge"
-              ? `⏱️ Stop (${timeLeft})`
-              : "⚡ Challenge"}
-          </button>
+          {/* Hide Standard Challenge in Daily Mode */}
+          {!isDailyChallengeActive && (
+            <button
+              onClick={gameMode === "standard" ? startChallenge : exitChallenge}
+              className={`p-2 rounded-lg text-sm border font-bold ${
+                gameMode === "challenge"
+                  ? "bg-red-500/20 border-red-500 text-red-400"
+                  : "bg-gray-800 border-gray-700 text-teal-400 hover:text-white"
+              }`}
+            >
+              {gameMode === "challenge"
+                ? `⏱️ Stop (${timeLeft})`
+                : "⚡ Challenge"}
+            </button>
+          )}
         </div>
 
         {/* Widgets - Hide in Zen Mode */}
@@ -978,16 +1112,24 @@ function App() {
               <p className="text-xl font-bold text-yellow-400">{best}</p>
             </div>
           )}
-          <select
-            value={exercise}
-            onChange={(e) => setExercise(e.target.value)}
-            className="bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
-          >
-            <option value="left_curl">Left Curl</option>
-            <option value="right_curl">Right Curl</option>
-            <option value="squat">Squats</option>
-            <option value="jumping_jack">Jumping Jacks</option>
-          </select>
+          {/* Hide Dropdown in Daily Mode (It's automatic) */}
+          {!isDailyChallengeActive && (
+            <select
+              value={exercise}
+              onChange={(e) => setExercise(e.target.value)}
+              className="bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            >
+              <option value="left_curl">Left Curl</option>
+              <option value="right_curl">Right Curl</option>
+              <option value="squat">Squats</option>
+              <option value="jumping_jack">Jumping Jacks</option>
+            </select>
+          )}
+          {isDailyChallengeActive && (
+            <div className="px-4 py-2 bg-yellow-500/20 border border-yellow-500 rounded-lg text-yellow-400 font-bold animate-pulse">
+              Step {challengeStep + 1} / {DAILY_ROUTINE.length}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1015,6 +1157,26 @@ function App() {
               ))}
             </div>
           </div>
+
+          {/* Enable/Disable Daily Challenge */}
+          <div className="mb-4 flex items-center justify-between">
+            <label className="text-xs text-gray-400 uppercase">
+              Daily Challenge
+            </label>
+            <button
+              onClick={toggleDailyChallenge}
+              className={`w-10 h-5 rounded-full relative transition-colors ${
+                showDailyChallenge ? "bg-yellow-500" : "bg-gray-600"
+              }`}
+            >
+              <div
+                className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${
+                  showDailyChallenge ? "left-6" : "left-1"
+                }`}
+              ></div>
+            </button>
+          </div>
+
           <div className="mb-4 flex items-center justify-between">
             <label className="text-xs text-gray-400 uppercase">
               Show Calories
@@ -1099,7 +1261,7 @@ function App() {
             <h2
               className={`text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r ${theme.gradient} mb-2`}
             >
-              SET COMPLETE!
+              {reportData.isFinal ? "WORKOUT COMPLETE!" : "SET COMPLETE!"}
             </h2>
             <p className="text-gray-400 mb-6 font-medium">
               {reportData.exercise}
@@ -1132,12 +1294,22 @@ function App() {
               </div>
             </div>
 
-            <button
-              onClick={closeReportCard}
-              className={`w-full py-3 bg-gradient-to-r ${theme.gradient} hover:opacity-90 rounded-xl font-bold text-lg text-white shadow-lg transform transition hover:scale-105`}
-            >
-              Continue
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={closeReportCard}
+                className={`flex-1 py-3 bg-gradient-to-r ${theme.gradient} hover:opacity-90 rounded-xl font-bold text-lg text-white shadow-lg transform transition hover:scale-105`}
+              >
+                {reportData.nextUp ? `Start ${reportData.nextUp}` : "Continue"}
+              </button>
+              {reportData.isFinal && (
+                <button
+                  onClick={() => setAppState("intro")}
+                  className="px-6 py-3 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold text-gray-300"
+                >
+                  Menu
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1219,20 +1391,6 @@ function App() {
                   </span>
                 </div>
               )}
-
-              {/* TEMPO METER */}
-              <div className="bg-black/60 backdrop-blur px-4 py-2 rounded-xl border-l-4 border-purple-500 shadow-lg mt-1">
-                <span className="text-gray-400 text-[10px] uppercase tracking-wider block">
-                  Tempo
-                </span>
-                <div
-                  className={`text-lg font-bold ${
-                    tempoStatus === "good" ? "text-green-400" : "text-red-400"
-                  }`}
-                >
-                  {lastRepTime}s
-                </div>
-              </div>
             </div>
 
             {/* Challenge Timer Overlay */}
@@ -1280,13 +1438,22 @@ function App() {
             </div>
           </div>
 
-          {/* Hide normal button in challenge mode */}
-          {gameMode !== "challenge" && (
+          {/* Hide normal button in challenge mode OR Daily Challenge */}
+          {gameMode !== "challenge" && !isDailyChallengeActive && (
             <button
               onClick={finishSet}
               className={`w-full bg-gradient-to-r ${theme.gradient} hover:opacity-90 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 text-lg tracking-wide uppercase`}
             >
               Finish Set & Save Progress
+            </button>
+          )}
+          {/* Dynamic Button for Daily Challenge */}
+          {isDailyChallengeActive && (
+            <button
+              onClick={finishSet}
+              className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:opacity-90 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 text-lg tracking-wide uppercase animate-pulse"
+            >
+              Complete {BASE_EXERCISES[exerciseRef.current].name}
             </button>
           )}
         </div>
@@ -1301,6 +1468,9 @@ function App() {
               </h3>
               <MuscleMap muscleData={muscleData} />
             </div>
+
+            {/* HISTORY CALENDAR - NEW WIDGET */}
+            <WorkoutsCalendar triggerUpdate={count} />
 
             <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl h-80 flex flex-col">
               <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4">
@@ -1366,53 +1536,6 @@ function App() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-
-            <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl max-h-80 overflow-y-auto custom-scrollbar">
-              <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4 sticky top-0 bg-gray-800 pb-2 border-b border-gray-700">
-                Today's Sessions
-              </h3>
-              {history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-gray-600">
-                  <p className="text-sm italic">No sets completed yet.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {history
-                    .slice()
-                    .reverse()
-                    .map((set, index) => (
-                      <div
-                        key={set.id}
-                        className={`flex justify-between items-center bg-gray-700/30 p-4 rounded-xl border border-gray-700/50 hover:bg-gray-700/50 transition-colors ${
-                          set.mode === "challenge"
-                            ? "border-l-4 border-l-red-500"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                              set.mode === "challenge"
-                                ? "bg-red-500/20 text-red-400"
-                                : `bg-gray-800 ${theme.text}`
-                            }`}
-                          >
-                            {set.mode === "challenge"
-                              ? "⚡"
-                              : history.length - index}
-                          </div>
-                          <span className="font-medium text-white">
-                            {set.reps} Reps
-                          </span>
-                        </div>
-                        <span className="text-gray-500 text-xs font-mono">
-                          {set.time}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              )}
             </div>
           </div>
         )}
