@@ -2,9 +2,7 @@
 
 A Next-Gen Personal Trainer powered by TensorFlow.js and React.
 
-Live Demo: [Insert your Vercel Link Here]
-
-(Note: Replace this image link with a screenshot of your actual app!)
+Live Demo: https://ai-fitness-tracker-liard.vercel.app/
 
 🚀 About The Project
 
