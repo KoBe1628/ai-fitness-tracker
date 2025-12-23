@@ -1,18 +1,97 @@
-# React + Vite
+🤖 AI Fitness Trainer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A Next-Gen Personal Trainer powered by TensorFlow.js and React.
 
-Currently, two official plugins are available:
+Live Demo: [Insert your Vercel Link Here]
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+(Note: Replace this image link with a screenshot of your actual app!)
 
-## React Compiler
+🚀 About The Project
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+AI Fitness Trainer is a computer vision web application that turns your webcam into a smart gym instructor. It uses the MoveNet (Thunder) model to track your body keypoints in real-time, completely locally in your browser (no video is sent to a server).
 
-Note: This will impact Vite dev & build performances.
+It doesn't just count reps—it analyzes your form, tracks your streaks, and gamifies your workout with XP, levels, and achievements.
 
-## Expanding the ESLint configuration
+✨ Key Features
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+🧠 AI & Computer Vision
+
+Real-time Tracking: Uses TensorFlow.js MoveNet (Thunder) for high-accuracy pose detection.
+
+Form Correction: Detects if you aren't squatting deep enough or curling fully and gives audio feedback ("Go Lower!", "Full Range!").
+
+AR Angle HUD: Visualizes joint angles (elbow/knee) with a glowing augmented reality gauge.
+
+Privacy Mode: Optional Face Blur feature that tracks your nose/ears to mask your identity.
+
+🎮 Gamification
+
+XP & Leveling System: Earn XP for every rep. Level up from "Rookie" to "Spartan."
+
+Trophy Room: Unlock achievements like "Iron Legs" (50 Squats) or "On Fire" (3-day streak).
+
+Challenge Mode (Time Attack): Race against a 60-second clock to set high scores.
+
+Daily Streaks: Tracks consecutive days of activity to keep you motivated.
+
+📊 Analytics & Data
+
+Visual Charts: Interactive Area Charts (Recharts) showing performance trends.
+
+Muscle Heatmap: A dynamic body diagram that lights up (Arms/Legs/Core) based on your daily volume.
+
+Biometric Calibration: Enter your weight in Settings for scientifically accurate Calorie burn estimates.
+
+Weekly Calendar: A GitHub-style commit graph for your workout consistency.
+
+🛠 Tools & Utilities
+
+Smart Rest Timer: Auto-starts a cooldown timer between sets.
+
+Voice Coach: Text-to-Speech engine counts reps out loud and shouts encouragement.
+
+Data Export/Import: Download your entire workout history as a JSON file to backup your data.
+
+Zen Mode: A distraction-free UI mode for pure focus.
+
+🛠 Tech Stack
+
+Frontend: React (Vite)
+
+AI Model: @tensorflow-models/pose-detection (MoveNet SinglePose Thunder)
+
+Backend: TensorFlow.js (WebGL backend for GPU acceleration)
+
+Visualization: Recharts
+
+Styling: Tailwind CSS
+
+Effects: Canvas Confetti
+
+🚀 Getting Started
+
+To run this project locally:
+
+Clone the repo
+
+git clone [https://github.com/KoBe1628/ai-fitness-tracker.git](https://github.com/KoBe1628/ai-fitness-tracker.git)
+cd ai-fitness-tracker
+
+Install dependencies
+
+npm install
+
+Run the development server
+
+npm run dev
+
+Open in Browser
+Visit http://localhost:5173 to start working out!
+
+🔒 Privacy First
+
+This application follows a Local-First architecture.
+
+No Video Uploads: Your webcam feed is processed entirely on your device (Client-Side). It never leaves your browser.
+
+Local Storage: All your stats (XP, History, Settings) are saved in your browser's Local Storage.
