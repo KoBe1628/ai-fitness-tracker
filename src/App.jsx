@@ -17,6 +17,66 @@ const popSound = new Audio(
   "[https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3](https://codeskulptor-demos.commondatastorage.googleapis.com/pang/pop.mp3)"
 );
 
+// --- TROPHY DATA ---
+const TROPHIES = [
+  {
+    id: "first_steps",
+    icon: "👟",
+    title: "First Steps",
+    desc: "Complete your first 10 reps",
+    check: (stats) => stats.totalReps >= 10,
+  },
+  {
+    id: "century_club",
+    icon: "💯",
+    title: "Century Club",
+    desc: "Complete 100 total reps",
+    check: (stats) => stats.totalReps >= 100,
+  },
+  {
+    id: "leg_day",
+    icon: "🦵",
+    title: "Iron Legs",
+    desc: "Complete 50 Squats",
+    check: (stats) => stats.squats >= 50,
+  },
+  {
+    id: "gun_show",
+    icon: "💪",
+    title: "Gun Show",
+    desc: "Complete 50 Curls",
+    check: (stats) => stats.curls >= 50,
+  },
+  {
+    id: "cardio_king",
+    icon: "⚡",
+    title: "Cardio King",
+    desc: "Complete 100 Jumping Jacks",
+    check: (stats) => stats.jacks >= 100,
+  },
+  {
+    id: "streak_3",
+    icon: "🔥",
+    title: "On Fire",
+    desc: "Reach a 3-day streak",
+    check: (stats) => stats.streak >= 3,
+  },
+  {
+    id: "high_level",
+    icon: "🚀",
+    title: "High Flyer",
+    desc: "Reach Level 5",
+    check: (stats) => stats.level >= 5,
+  },
+  {
+    id: "challenge_champ",
+    icon: "🏆",
+    title: "Champion",
+    desc: "Complete a Daily Challenge",
+    check: (stats) => stats.challenges >= 1,
+  },
+];
+
 // --- COMPONENTS ---
 
 const MuscleMap = ({ muscleData }) => {
@@ -91,7 +151,6 @@ const WorkoutsCalendar = ({ triggerUpdate }) => {
     setActivityLog(log);
   }, [triggerUpdate]);
 
-  // Generate last 7 days
   const days = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
@@ -144,6 +203,7 @@ function App() {
   const [appState, setAppState] = useState("intro");
   const [showInstructions, setShowInstructions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTrophies, setShowTrophies] = useState(false); // New: Trophy Modal
   const [isMuted, setIsMuted] = useState(false);
   const [difficulty, setDifficulty] = useState("normal");
   const [gameMode, setGameMode] = useState("standard");
@@ -165,6 +225,7 @@ function App() {
   const [exercise, setExercise] = useState("left_curl");
   const [confidence, setConfidence] = useState(0);
   const [isReady, setIsReady] = useState(false);
+  const [unlockedTrophies, setUnlockedTrophies] = useState([]); // New: Track Unlocks
 
   const [muscleData, setMuscleData] = useState({ arms: 0, legs: 0, core: 0 });
   const [timeLeft, setTimeLeft] = useState(60);
@@ -190,6 +251,7 @@ function App() {
   // --- REFS ---
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const fileInputRef = useRef(null); // Ref for file upload
   const startedRef = useRef(false);
   const detectorRef = useRef(null);
   const countRef = useRef(0);
@@ -319,6 +381,66 @@ function App() {
     }
   };
 
+  // --- DATA BACKUP FUNCTIONS ---
+  const exportData = () => {
+    const data = {
+      total_xp: localStorage.getItem("total_xp"),
+      streak: localStorage.getItem("streak"),
+      dailyTotal: localStorage.getItem("dailyTotal"),
+      lastWorkoutDate: localStorage.getItem("lastWorkoutDate"),
+      user_weight: localStorage.getItem("user_weight"),
+      show_calories: localStorage.getItem("show_calories"),
+      show_daily_challenge: localStorage.getItem("show_daily_challenge"),
+      trophies: localStorage.getItem("trophies"),
+      activity_log: localStorage.getItem("activity_log"),
+
+      // Exercise Specifics
+      best_left_curl: localStorage.getItem("best_left_curl"),
+      history_left_curl: localStorage.getItem("history_left_curl"),
+      best_right_curl: localStorage.getItem("best_right_curl"),
+      history_right_curl: localStorage.getItem("history_right_curl"),
+      best_squat: localStorage.getItem("best_squat"),
+      history_squat: localStorage.getItem("history_squat"),
+      best_jumping_jack: localStorage.getItem("best_jumping_jack"),
+      history_jumping_jack: localStorage.getItem("history_jumping_jack"),
+
+      // Muscles
+      muscle_arms: localStorage.getItem("muscle_arms"),
+      muscle_legs: localStorage.getItem("muscle_legs"),
+      muscle_core: localStorage.getItem("muscle_core"),
+    };
+
+    const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "fitness_data.json";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const importData = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        Object.keys(data).forEach((key) => {
+          if (data[key] !== null) localStorage.setItem(key, data[key]);
+        });
+        alert("Data imported successfully! Reloading...");
+        window.location.reload();
+      } catch (err) {
+        console.error("Import failed", err);
+        alert("Invalid data file");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   useEffect(() => {
     if (appState === "active") {
       init();
@@ -360,6 +482,7 @@ function App() {
     setHistory(JSON.parse(localStorage.getItem(`history_${exercise}`)) || []);
     setXp(parseInt(localStorage.getItem("total_xp") || 0));
     setStreak(parseInt(localStorage.getItem("streak") || 0));
+    setUnlockedTrophies(JSON.parse(localStorage.getItem("trophies")) || []);
 
     const savedWeight = localStorage.getItem("user_weight");
     if (savedWeight) setWeight(parseInt(savedWeight));
@@ -771,6 +894,33 @@ function App() {
     activityLog[today] = true;
     localStorage.setItem("activity_log", JSON.stringify(activityLog));
 
+    // --- CHECK TROPHIES ---
+    const currentStats = {
+      totalReps: parseInt(localStorage.getItem("total_xp") || 0) / 10, // Approx
+      squats: parseInt(localStorage.getItem("muscle_legs") || 0),
+      curls: parseInt(localStorage.getItem("muscle_arms") || 0),
+      jacks: parseInt(localStorage.getItem("muscle_core") || 0),
+      streak: streak,
+      level: level,
+      challenges: 0, // Placeholder
+    };
+
+    let newUnlock = false;
+    const newUnlocked = [...unlockedTrophies];
+
+    TROPHIES.forEach((t) => {
+      if (!newUnlocked.includes(t.id) && t.check(currentStats)) {
+        newUnlocked.push(t.id);
+        speak(`Achievement Unlocked: ${t.title}`);
+        newUnlock = true;
+      }
+    });
+
+    if (newUnlock) {
+      setUnlockedTrophies(newUnlocked);
+      localStorage.setItem("trophies", JSON.stringify(newUnlocked));
+    }
+
     if (lastDate !== today) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -820,6 +970,7 @@ function App() {
     }
 
     setShowReportCard(true);
+    setCalendarUpdate((prev) => prev + 1); // Trigger calendar refresh
 
     if (gameModeRef.current === "standard") {
       speak("Set Saved.");
@@ -1002,6 +1153,12 @@ function App() {
           >
             ⚙️
           </button>
+          <button
+            onClick={() => setShowTrophies(!showTrophies)}
+            className="bg-gray-800 p-2 rounded-lg hover:bg-gray-700 text-sm border border-gray-700"
+          >
+            🏆
+          </button>
 
           <button
             onClick={() => setPrivacyMode(!privacyMode)}
@@ -1011,7 +1168,7 @@ function App() {
                 : "bg-gray-800 border-gray-700 text-gray-400"
             }`}
           >
-            {privacyMode ? "🕵️ Hidden" : "👁️ Visible"}
+            {privacyMode ? "🕵️" : "👁️"}
           </button>
 
           <button
@@ -1022,7 +1179,7 @@ function App() {
                 : "bg-gray-800 border-gray-700 text-gray-400"
             }`}
           >
-            {zenMode ? "🧘 Active" : "🧘 Zen"}
+            {zenMode ? "🧘" : "🧘"}
           </button>
 
           {/* Hide Standard Challenge in Daily Mode */}
@@ -1205,9 +1362,76 @@ function App() {
               className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-white focus:ring-2 focus:ring-teal-500 outline-none"
             />
           </div>
+
+          {/* DATA BACKUP */}
+          <div className="mb-4 pt-4 border-t border-gray-700">
+            <label className="text-xs text-gray-400 uppercase block mb-2">
+              Data Backup
+            </label>
+            <button
+              onClick={exportData}
+              className="w-full mb-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-bold text-white"
+            >
+              Export Data (Save)
+            </button>
+            <label className="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold text-white text-center cursor-pointer block">
+              Import Data (Load)
+              <input
+                type="file"
+                className="hidden"
+                accept=".json"
+                onChange={importData}
+              />
+            </label>
+          </div>
+
           <p className="text-[10px] text-gray-500">
             Hard mode requires deeper squats and full extension.
           </p>
+        </div>
+      )}
+
+      {/* Trophy Modal */}
+      {showTrophies && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+          <div className="bg-gray-900 border border-teal-500 p-8 rounded-3xl max-w-2xl w-full relative">
+            <button
+              onClick={() => setShowTrophies(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
+            <h2 className={`text-3xl font-bold mb-6 ${theme.text} text-center`}>
+              Trophy Room
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {TROPHIES.map((t) => {
+                const isUnlocked = unlockedTrophies.includes(t.id);
+                return (
+                  <div
+                    key={t.id}
+                    className={`p-4 rounded-xl border text-center ${
+                      isUnlocked
+                        ? `bg-gray-800 border-yellow-500 shadow-lg shadow-yellow-500/10`
+                        : "bg-gray-800/50 border-gray-700 opacity-50"
+                    }`}
+                  >
+                    <div className="text-4xl mb-2 filter drop-shadow-md">
+                      {t.icon}
+                    </div>
+                    <h3
+                      className={`text-sm font-bold ${
+                        isUnlocked ? "text-white" : "text-gray-500"
+                      }`}
+                    >
+                      {t.title}
+                    </h3>
+                    <p className="text-[10px] text-gray-400 mt-1">{t.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1536,6 +1760,53 @@ function App() {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
+            </div>
+
+            <div className="bg-gray-800 p-6 rounded-2xl border border-gray-700 shadow-xl max-h-80 overflow-y-auto custom-scrollbar">
+              <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-4 sticky top-0 bg-gray-800 pb-2 border-b border-gray-700">
+                Today's Sessions
+              </h3>
+              {history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-gray-600">
+                  <p className="text-sm italic">No sets completed yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {history
+                    .slice()
+                    .reverse()
+                    .map((set, index) => (
+                      <div
+                        key={set.id}
+                        className={`flex justify-between items-center bg-gray-700/30 p-4 rounded-xl border border-gray-700/50 hover:bg-gray-700/50 transition-colors ${
+                          set.mode === "challenge"
+                            ? "border-l-4 border-l-red-500"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                              set.mode === "challenge"
+                                ? "bg-red-500/20 text-red-400"
+                                : `bg-gray-800 ${theme.text}`
+                            }`}
+                          >
+                            {set.mode === "challenge"
+                              ? "⚡"
+                              : history.length - index}
+                          </div>
+                          <span className="font-medium text-white">
+                            {set.reps} Reps
+                          </span>
+                        </div>
+                        <span className="text-gray-500 text-xs font-mono">
+                          {set.time}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
         )}
