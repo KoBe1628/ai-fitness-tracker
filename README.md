@@ -4,6 +4,12 @@ A Next-Gen Personal Trainer powered by TensorFlow.js and React.
 
 Live Demo: https://ai-fitness-tracker-liard.vercel.app/
 
+<img width="1920" height="916" alt="image" src="https://github.com/user-attachments/assets/dcecf60d-60cb-41dc-9c66-4e2426950352" />
+
+<img width="1908" height="1071" alt="image" src="https://github.com/user-attachments/assets/29169bbe-c413-453d-83b8-23589295d62d" />
+
+
+
 🚀 About The Project
 
 AI Fitness Trainer is a computer vision web application that turns your webcam into a smart gym instructor. It uses the MoveNet (Thunder) model to track your body keypoints in real-time, completely locally in your browser (no video is sent to a server).
